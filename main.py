@@ -9,6 +9,8 @@ import subprocess
 
 import actions
 import config
+import features
+import settings
 from safety import normalize_text
 import speech
 
@@ -42,18 +44,31 @@ def parse_search_query(text: str) -> str | None:
 
 def route_command(text: str) -> bool:
     """Выполнить команду; False означает завершение ассистента."""
+    prefix = re.match(r"^варя(?:\s*[,!:.]\s*|\s+|$)", text.strip(), re.I)
+    if prefix:
+        text = text.strip()[prefix.end():].strip()
+        if not text:
+            speech.speak("Да, я слушаю.")
+            return True
+    elif (settings.snapshot()["wake_word"]
+          and normalize_text(text) not in {"стоп", "выход", "пока"}):
+        return True
     command = normalize_text(text)
     try:
         if command in {"стоп", "выход", "пока"}:
             speech.speak("До свидания!")
             return False
+        if features.handle(command, text):
+            return True
         query = parse_search_query(text)
         if query is not None:
             if query:
                 actions.search_web(query)
                 speech.speak("Открываю поиск Яндекса.")
             else:
-                speech.speak("Произнесите запрос после слов: найди в интернете.")
+                speech.speak(
+                    "Произнесите запрос после слов: найди в интернете.",
+                )
         elif command.startswith("открой "):
             if actions.open_app(command.removeprefix("открой ")):
                 speech.speak("Открываю.")
@@ -89,6 +104,7 @@ def main() -> None:
     if os.name != "nt":
         print("Варя предназначена для Windows 10/11.")
         return
+    settings.load()
     try:
         setup_logging()
     except OSError as error:
@@ -97,6 +113,8 @@ def main() -> None:
     try:
         speech.speak(f"Я {config.ASSISTANT_NAME}. Слушаю ваши команды.")
         while True:
+            if features.due_timers():
+                speech.speak("Время вышло! Таймер завершён.")
             text = speech.listen()
             if text is not None and not route_command(text):
                 break

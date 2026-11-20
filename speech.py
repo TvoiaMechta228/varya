@@ -9,16 +9,22 @@ from typing import Any
 import speech_recognition as sr
 
 import config
+import settings
 
 logger = logging.getLogger(__name__)
 _recognizer: sr.Recognizer | None = None
 _engine: Any = None
 cancel_event: threading.Event | None = None
+shutdown_event: threading.Event | None = None
+_neural_retry_at = 0.0
 
 
 def is_cancelled() -> bool:
     """Проверить остановку с кнопки интерфейса."""
-    return cancel_event is not None and cancel_event.is_set()
+    return (
+        cancel_event is not None and cancel_event.is_set()
+        or shutdown_event is not None and shutdown_event.is_set()
+    )
 
 
 def close() -> None:
@@ -27,6 +33,8 @@ def close() -> None:
     if _engine is not None:
         _engine.stop()
         _engine = None
+    if "neural_voice" in sys.modules:
+        sys.modules["neural_voice"].close()
 
 
 def _get_recognizer() -> sr.Recognizer:
@@ -52,10 +60,24 @@ def _voice_description(voice: Any) -> str:
 
 def speak(text: str) -> bool:
     """Озвучить текст; при сбое вывести его в консоль и вернуть False."""
-    global _engine
+    global _engine, _neural_retry_at
     logger.info("Ответ: %s", text)
     if sys.stdout is not None:
         print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
+    options = settings.snapshot()
+    if options["voice"] == "neural" and time.monotonic() >= _neural_retry_at:
+        try:
+            import neural_voice
+
+            return neural_voice.speak(
+                text, options["rate"], options["volume"], is_cancelled,
+            )
+        except Exception:
+            logger.warning("Нейроголос недоступен; использую голос Windows",
+                           exc_info=True)
+            _neural_retry_at = time.monotonic() + 60
+    if is_cancelled():
+        return False
     try:
         if _engine is None:
             import pyttsx3
@@ -71,6 +93,8 @@ def speak(text: str) -> bool:
                     break
             else:
                 logger.warning("Русский голос не найден; выбран системный")
+        _engine.setProperty("rate", options["rate"])
+        _engine.setProperty("volume", options["volume"] / 100)
         _engine.say(text)
         _engine.runAndWait()
         return True

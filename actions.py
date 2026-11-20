@@ -12,6 +12,30 @@ import config
 import safety
 
 logger = logging.getLogger(__name__)
+MEDIA_KEYS = {
+    "громче": "volumeup", "тише": "volumedown",
+    "переключи звук": "volumemute", "пауза музыки": "playpause",
+}
+WINDOW_KEYS = {
+    "сверни окно": ("win", "down"),
+    "разверни окно": ("win", "up"),
+    "покажи рабочий стол": ("win", "d"),
+}
+
+
+def media_control(command: str) -> None:
+    """Отправить только разрешённую мультимедийную клавишу."""
+    import pyautogui
+
+    key = MEDIA_KEYS[command]
+    pyautogui.press(key, presses=3 if command in {"громче", "тише"} else 1)
+
+
+def window_control(command: str) -> None:
+    """Выполнить разрешённое сочетание для активного окна."""
+    import pyautogui
+
+    pyautogui.hotkey(*WINDOW_KEYS[command])
 
 
 def _require_windows() -> None:

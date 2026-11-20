@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 import speech
+import settings
 
 
 @pytest.fixture(autouse=True)
@@ -13,4 +14,7 @@ def mute_speech(monkeypatch):
     mock = Mock(return_value=True)
     monkeypatch.setattr(speech, "speak", mock)
     monkeypatch.setattr(speech.time, "sleep", Mock())
+    monkeypatch.setattr(settings, "_current", {
+        **settings.DEFAULTS, "voice": "sapi",
+    })
     return mock
