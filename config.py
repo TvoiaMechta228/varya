@@ -1,6 +1,7 @@
 """Настройки ассистента и единственный белый список программ."""
 
 import os
+import sys
 from pathlib import Path
 
 ASSISTANT_NAME = "Варя"
@@ -15,7 +16,11 @@ ERROR_RETRY_DELAY = 2.0
 MICROPHONE_INDEX: int | None = None
 SPEECH_RATE = 175
 BASE_DIR = Path(__file__).resolve().parent
-LOG_FILE = BASE_DIR / "logs" / "varya.log"
+DATA_DIR = (
+    Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Varya"
+    if getattr(sys, "frozen", False) else BASE_DIR
+)
+LOG_FILE = DATA_DIR / "logs" / "varya.log"
 LOG_MAX_BYTES = 1_000_000
 LOG_BACKUP_COUNT = 3
 PICTURES_DIR = Path.home() / "Pictures"

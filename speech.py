@@ -1,6 +1,8 @@
 """Распознавание речи без файлов и последовательный синтез SAPI5."""
 
 import logging
+import sys
+import threading
 import time
 from typing import Any
 
@@ -11,6 +13,20 @@ import config
 logger = logging.getLogger(__name__)
 _recognizer: sr.Recognizer | None = None
 _engine: Any = None
+cancel_event: threading.Event | None = None
+
+
+def is_cancelled() -> bool:
+    """Проверить остановку с кнопки интерфейса."""
+    return cancel_event is not None and cancel_event.is_set()
+
+
+def close() -> None:
+    """Освободить движок в том же потоке, где он был создан."""
+    global _engine
+    if _engine is not None:
+        _engine.stop()
+        _engine = None
 
 
 def _get_recognizer() -> sr.Recognizer:
@@ -38,7 +54,8 @@ def speak(text: str) -> bool:
     """Озвучить текст; при сбое вывести его в консоль и вернуть False."""
     global _engine
     logger.info("Ответ: %s", text)
-    print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
+    if sys.stdout is not None:
+        print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
     try:
         if _engine is None:
             import pyttsx3
@@ -70,6 +87,8 @@ def listen(
 ) -> str | None:
     """Слушать одну реплику; при тишине или ошибке вернуть None."""
     try:
+        if is_cancelled():
+            return None
         recognizer = _get_recognizer()
         with sr.Microphone(device_index=config.MICROPHONE_INDEX) as source:
             recognizer.adjust_for_ambient_noise(
@@ -78,7 +97,11 @@ def listen(
             audio = recognizer.listen(
                 source, timeout=timeout, phrase_time_limit=phrase_time_limit,
             )
+        if is_cancelled():
+            return None
         text = recognizer.recognize_google(audio, language=config.LANGUAGE)
+        if is_cancelled():
+            return None
         logger.info("Распознано: %s", text)
         return text
     except sr.WaitTimeoutError:

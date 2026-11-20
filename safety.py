@@ -44,7 +44,10 @@ def confirm(action: str) -> bool:
     except Exception:
         logger.exception("Ошибка получения подтверждения")
         return False
-    approved = answer is not None and normalize_text(answer) == expected
+    approved = (
+        answer is not None and normalize_text(answer) == expected
+        and not speech.is_cancelled()
+    )
     logger.info("Подтверждение %s: %s", action, approved)
     if not approved:
         speech.speak("Действие отменено.")
