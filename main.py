@@ -9,6 +9,8 @@ import subprocess
 
 import actions
 import config
+import conversation
+import desktop
 import features
 import settings
 from safety import normalize_text
@@ -58,6 +60,12 @@ def route_command(text: str) -> bool:
         if command in {"стоп", "выход", "пока"}:
             speech.speak("До свидания!")
             return False
+        if conversation.control(command):
+            return True
+        response = desktop.execute(command, text)
+        if response is not None:
+            speech.speak(response)
+            return True
         if features.handle(command, text):
             return True
         query = parse_search_query(text)
@@ -88,6 +96,8 @@ def route_command(text: str) -> bool:
         elif command == "отмени выключение":
             actions.cancel_shutdown()
             speech.speak("Запланированное выключение отменено.")
+        elif conversation.enabled:
+            conversation.reply(text)
         else:
             speech.speak("Команда не распознана.")
     except (OSError, subprocess.SubprocessError, ValueError):

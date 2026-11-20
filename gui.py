@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
 import config
+import conversation
 import features
 import main
 from organizer import Organizer
@@ -187,6 +188,8 @@ class VaryaWindow:
             controls, text="Остановить", command=self.stop, state="disabled",
         )
         self.stop_button.pack(side="left")
+        self.chat_button = ttk.Button(controls, text="Поговорить", command=self.toggle_chat)
+        self.chat_button.pack(side="left", padx=10)
         entry_row = ttk.Frame(frame)
         entry_row.pack(fill="x", pady=(0, 12))
         self.command_text = tk.StringVar()
@@ -272,6 +275,15 @@ class VaryaWindow:
         logger.info("Настройки сохранены")
         return True
 
+    def toggle_chat(self) -> None:
+        """Переключить режим через тот же обработчик, что и голосовая команда."""
+        if self.busy:
+            messagebox.showinfo("Разговор", "Скажите «давай поговорим» или остановите прослушивание.")
+            return
+        self.command_text.set("Варя, режим команд" if conversation.enabled
+                              else "Варя, давай поговорим")
+        self.submit_command()
+
     def submit_command(self) -> None:
         """Передать введённую команду в последовательную очередь действий."""
         if self.closing:
@@ -328,6 +340,7 @@ class VaryaWindow:
             self.events.put(("timer", message))
             self.controller.alarms.put(message)
             self.organizer.feedback.set(message)
+        self.chat_button.configure(text="Закончить разговор" if conversation.enabled else "Поговорить")
         if self.organizer.winfo_ismapped():
             self.organizer.refresh()
         self.root.after(250, self.tick)

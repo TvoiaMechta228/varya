@@ -7,6 +7,8 @@ import speech
 
 logger = logging.getLogger(__name__)
 _CONFIRMATIONS = {
+    "close_window": ("да закрыть окно", "Закрыть это окно? Скажите: да, закрыть окно."),
+    "create_folder": ("да создать папку", "Создать папку? Скажите: да, создать папку."),
     "shutdown": (
         "да выключение",
         "Выключить компьютер через десять секунд? Скажите: да, выключение.",
@@ -27,12 +29,14 @@ def normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-def confirm(action: str) -> bool:
+def confirm(action: str, *, target: str = "") -> bool:
     """Принять следующую точную реплику; при сбое отменить действие."""
     if action not in _CONFIRMATIONS:
         logger.warning("Отклонено неизвестное опасное действие: %s", action)
         return False
     expected, prompt = _CONFIRMATIONS[action]
+    if target:
+        prompt = f"{target}. {prompt}"
     if not speech.speak(prompt):
         logger.warning("Подтверждение отменено: приглашение не озвучено")
         return False
