@@ -4,6 +4,8 @@ from datetime import datetime
 from decimal import Decimal
 import json
 import logging
+from math import ceil
+from threading import RLock
 import re
 import time
 
@@ -12,13 +14,16 @@ import settings
 import speech
 
 logger = logging.getLogger(__name__)
-_timers: list[float] = []
+_timers: list[tuple[str, float]] = []
+_timer_lock = RLock()
+_note_lock = RLock()
 HELP = (
     "Варя, который час • какая сегодня дата\n"
     "Открой блокнот / калькулятор / paint / браузер\n"
     "Найди в интернете рецепт борща • скриншот\n"
     "Громче • тише • переключи звук • пауза музыки\n"
     "Сверни окно • разверни окно • покажи рабочий стол\n"
+    "Таймер чай на три минуты • отмени таймер чай • мои таймеры\n"
     "Таймер на пять минут • сколько осталось • отмени таймеры\n"
     "Запомни купить молоко • мои заметки\n"
     "Посчитай 12 плюс 3 • что ты умеешь\n"
@@ -63,13 +68,55 @@ def duration(text: str) -> int | None:
 
 def due_timers() -> int:
     """Удалить истёкшие таймеры и вернуть их количество."""
-    now = time.monotonic()
-    due = sum(end <= now for end in _timers)
-    _timers[:] = [end for end in _timers if end > now]
-    return due
+    return len(expired_names())
 
 
-def _notes() -> list[dict]:
+def expired_names() -> list[str]:
+    """Забрать завершённые таймеры ровно один раз."""
+    with _timer_lock:
+        now = time.monotonic()
+        names = [name for name, end in _timers if end <= now]
+        _timers[:] = [(name, end) for name, end in _timers if end > now]
+        return names
+
+
+def remaining() -> list[tuple[str, int]]:
+    """Снимок таймеров в порядке срабатывания."""
+    with _timer_lock:
+        now = time.monotonic()
+        return [(name, max(0, ceil(end - now))) for name, end in
+                sorted(_timers, key=lambda timer: timer[1])]
+
+
+def add_timer(name: str, seconds: int) -> str:
+    """Запустить таймер с уникальным названием."""
+    with _timer_lock:
+        if len(_timers) >= 10:
+            raise ValueError("Уже работают десять таймеров.")
+        if not 1 <= seconds <= 86400:
+            raise ValueError("Допустимое время — от секунды до суток.")
+        used = {label.casefold() for label, _ in _timers}
+        name = " ".join(name.split())
+        if not name:
+            name = next(f"Таймер {i}" for i in range(1, 12)
+                        if f"таймер {i}" not in used)
+        if len(name) > 48 or name.casefold() in used:
+            raise ValueError("Выберите свободное название до 48 символов.")
+        _timers.append((name, time.monotonic() + seconds))
+        return name
+
+
+def cancel_timer(name: str) -> bool:
+    """Отменить только таймер с точным названием."""
+    with _timer_lock:
+        for timer in _timers:
+            if timer[0].casefold() == name.casefold():
+                _timers.remove(timer)
+                return True
+    return False
+
+
+def read_notes() -> list[dict]:
     """Загрузить локальные заметки с проверкой формата."""
     try:
         data = json.loads(
@@ -87,9 +134,14 @@ def _notes() -> list[dict]:
 
 def remember(text: str) -> None:
     """Добавить заметку в локальный JSON без изменения существующих записей."""
+    with _note_lock:
+        _append_note(text.strip())
+
+
+def _append_note(text: str) -> None:
     if not 1 <= len(text) <= 1000:
         raise ValueError("Допустимо от 1 до 1000 символов")
-    notes = _notes()
+    notes = read_notes()
     if len(notes) >= 1000:
         raise ValueError("Достигнут предел в 1000 заметок")
     notes.append({"text": text, "created": datetime.now().isoformat()})
@@ -143,21 +195,35 @@ def handle(command: str, raw: str) -> bool:
     elif command in actions.WINDOW_KEYS:
         actions.window_control(command)
         speech.speak("Готово.")
-    elif command.startswith("таймер на "):
-        seconds = duration(command.removeprefix("таймер на "))
+    elif command.startswith("отмени таймер "):
+        name = command.removeprefix("отмени таймер ")
+        speech.speak(f"Таймер {name} отменён." if cancel_timer(name)
+                     else "Такого таймера нет.")
+    elif command == "мои таймеры":
+        active = remaining()
+        speech.speak(". ".join(f"{name}, осталось {sec} секунд"
+                               for name, sec in active)
+                     if active else "Активных таймеров нет.")
+    elif match := re.fullmatch(r"(?:поставь )?таймер(?: (.+?))? на (.+)", command):
+        name, period = match.groups()
+        seconds = duration(period)
         if seconds is None:
             speech.speak("Укажите время от одной секунды до 24 часов.")
-        elif len(_timers) >= 10:
-            speech.speak("Уже работают десять таймеров.")
         else:
-            _timers.append(time.monotonic() + seconds)
-            speech.speak(f"Таймер установлен на {seconds} секунд.")
+            try:
+                label = add_timer(name or "", seconds)
+            except ValueError as error:
+                speech.speak(str(error))
+            else:
+                speech.speak(f"{label}. Отсчёт начался.")
     elif command == "отмени таймеры":
-        _timers.clear()
+        with _timer_lock:
+            _timers.clear()
         speech.speak("Таймеры отменены.")
     elif command == "сколько осталось":
-        if _timers:
-            seconds = max(0, round(min(_timers) - time.monotonic()))
+        active = remaining()
+        if active:
+            _, seconds = active[0]
             speech.speak(f"До ближайшего таймера {seconds} секунд.")
         else:
             speech.speak("Активных таймеров нет.")
@@ -165,7 +231,7 @@ def handle(command: str, raw: str) -> bool:
         remember(raw.split(maxsplit=1)[1])
         speech.speak("Заметка сохранена на этом компьютере.")
     elif command == "мои заметки":
-        notes = _notes()
+        notes = read_notes()
         speech.speak("Последние заметки: " + "; ".join(
             note["text"] for note in notes[-5:]
         ) if notes else "Заметок пока нет.")

@@ -10,6 +10,7 @@ from tkinter import messagebox, scrolledtext, ttk
 import config
 import features
 import main
+from organizer import Organizer
 import settings
 import speech
 
@@ -43,6 +44,7 @@ class AssistantController:
         self.closing = threading.Event()
         self.preview = threading.Event()
         self.commands: Queue = Queue()
+        self.alarms: Queue = Queue()
         self.thread = threading.Thread(
             target=self._run, name="VaryaSpeech", daemon=True,
         )
@@ -62,6 +64,14 @@ class AssistantController:
         self.closing.set()
         self.stopping.set()
         self.request.set()
+
+    def announce_timers(self) -> None:
+        """Озвучить сигнал, когда освободится речевой поток."""
+        try:
+            message = self.alarms.get_nowait()
+        except Empty:
+            return
+        speech.speak(message)
 
     def _run(self) -> None:
         """Последовательно слушать и выполнять только актуальные команды."""
@@ -90,9 +100,7 @@ class AssistantController:
                     self.preview.clear()
                     speech.speak("Привет! Я Варя, твоя помощница. "
                                  "Давай сделаем этот день немного проще.")
-                if features.due_timers():
-                    self.events.put(("timer", "Время вышло! Таймер завершён."))
-                    speech.speak("Время вышло! Таймер завершён.")
+                self.announce_timers()
                 if not self.request.wait(0.1):
                     continue
                 self.request.clear()
@@ -103,9 +111,7 @@ class AssistantController:
                     self.events.put(("state", "Отвечаю…"))
                     speech.speak("Я Варя. Слушаю ваши команды.")
                     while not self.stopping.is_set():
-                        if features.due_timers():
-                            self.events.put(("timer", "Таймер завершён!"))
-                            speech.speak("Время вышло! Таймер завершён.")
+                        self.announce_timers()
                         self.events.put(("state", "Слушаю микрофон…"))
                         text = speech.listen()
                         if self.stopping.is_set():
@@ -154,6 +160,8 @@ class VaryaWindow:
         tabs.pack(fill="both", expand=True, padx=16, pady=16)
         frame = ttk.Frame(tabs, padding=20)
         tabs.add(frame, text="  Ассистент  ")
+        self.organizer = Organizer(tabs)
+        tabs.add(self.organizer, text="  Мои дела  ")
         self.make_settings(tabs)
         commands = ttk.Frame(tabs, padding=20)
         tabs.add(commands, text="  Команды  ")
@@ -204,6 +212,7 @@ class VaryaWindow:
         self.journal.pack(fill="both", expand=True)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self.poll)
+        self.tick()
 
     def make_settings(self, tabs: ttk.Notebook) -> None:
         """Добавить сохраняемые настройки голоса и обращения по имени."""
@@ -308,6 +317,20 @@ class VaryaWindow:
         self.start_button.configure(state="disabled")
         self.stop()
         self.controller.close()
+
+    def tick(self) -> None:
+        """Обновлять отсчёт и показывать сигнал даже при занятом микрофоне."""
+        if self.closing:
+            return
+        names = features.expired_names()
+        if names:
+            message = "Время вышло. " + ", ".join(names) + "."
+            self.events.put(("timer", message))
+            self.controller.alarms.put(message)
+            self.organizer.feedback.set(message)
+        if self.organizer.winfo_ismapped():
+            self.organizer.refresh()
+        self.root.after(250, self.tick)
 
     def poll(self) -> None:
         """Обработать очередь в главном потоке Tk."""

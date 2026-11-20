@@ -113,8 +113,8 @@ def main() -> None:
     try:
         speech.speak(f"Я {config.ASSISTANT_NAME}. Слушаю ваши команды.")
         while True:
-            if features.due_timers():
-                speech.speak("Время вышло! Таймер завершён.")
+            for name in features.expired_names():
+                speech.speak(f"Время вышло. {name}.")
             text = speech.listen()
             if text is not None and not route_command(text):
                 break
