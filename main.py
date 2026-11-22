@@ -11,6 +11,7 @@ import actions
 import config
 import conversation
 import desktop
+from dialogue import Dialogue, phrase
 import features
 import settings
 from safety import normalize_text
@@ -44,7 +45,8 @@ def parse_search_query(text: str) -> str | None:
     return (match.group(1) or "").strip()
 
 
-def route_command(text: str) -> bool:
+def route_command(text: str, *, dialogue: Dialogue | None = None,
+                  typed: bool = False) -> bool:
     """Выполнить команду; False означает завершение ассистента."""
     prefix = re.match(r"^варя(?:\s*[,!:.]\s*|\s+|$)", text.strip(), re.I)
     if prefix:
@@ -52,14 +54,24 @@ def route_command(text: str) -> bool:
         if not text:
             speech.speak("Да, я слушаю.")
             return True
-    elif (settings.snapshot()["wake_word"]
+    elif (not typed and settings.snapshot()["wake_word"]
           and normalize_text(text) not in {"стоп", "выход", "пока"}):
         return True
+    original = text
+    speech.publish("user", text)
     command = normalize_text(text)
     try:
         if command in {"стоп", "выход", "пока"}:
             speech.speak("До свидания!")
             return False
+        if dialogue is not None:
+            text, question = dialogue.prepare(text)
+            if question:
+                speech.speak(question)
+                return True
+        else:
+            text = phrase(text)
+        command = normalize_text(text)
         if conversation.control(command):
             return True
         response = desktop.execute(command, text)
@@ -97,7 +109,7 @@ def route_command(text: str) -> bool:
             actions.cancel_shutdown()
             speech.speak("Запланированное выключение отменено.")
         elif conversation.enabled:
-            conversation.reply(text)
+            conversation.reply(original)
         else:
             speech.speak("Команда не распознана.")
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -122,11 +134,12 @@ def main() -> None:
         return
     try:
         speech.speak(f"Я {config.ASSISTANT_NAME}. Слушаю ваши команды.")
+        dialogue = Dialogue()
         while True:
             for name in features.expired_names():
                 speech.speak(f"Время вышло. {name}.")
             text = speech.listen()
-            if text is not None and not route_command(text):
+            if text is not None and not route_command(text, dialogue=dialogue):
                 break
     except KeyboardInterrupt:
         logger.info("Остановка с клавиатуры")

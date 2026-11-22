@@ -1,5 +1,7 @@
 """Распознавание речи без файлов и последовательный синтез SAPI5."""
 
+from collections.abc import Callable
+from contextvars import ContextVar
 import logging
 import sys
 import threading
@@ -17,6 +19,23 @@ _engine: Any = None
 cancel_event: threading.Event | None = None
 shutdown_event: threading.Event | None = None
 _neural_retry_at = 0.0
+_calibrated = False
+transcript: ContextVar[Callable[[str, str], None] | None] = ContextVar(
+    "transcript", default=None,
+)
+
+
+def publish(role: str, text: str) -> None:
+    """Передать реплику интерфейсу речевого потока."""
+    listener = transcript.get()
+    if listener is not None:
+        listener(role, text)
+
+
+def new_session() -> None:
+    """Обновить оценку фонового шума при следующем включении микрофона."""
+    global _calibrated
+    _calibrated = False
 
 
 def is_cancelled() -> bool:
@@ -61,6 +80,7 @@ def _voice_description(voice: Any) -> str:
 def speak(text: str) -> bool:
     """Озвучить текст; при сбое вывести его в консоль и вернуть False."""
     global _engine, _neural_retry_at
+    publish("assistant", text)
     logger.info("Ответ: %s", text)
     if sys.stdout is not None:
         print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
@@ -110,14 +130,17 @@ def listen(
     phrase_time_limit: float = config.PHRASE_TIME_LIMIT,
 ) -> str | None:
     """Слушать одну реплику; при тишине или ошибке вернуть None."""
+    global _calibrated
     try:
         if is_cancelled():
             return None
         recognizer = _get_recognizer()
         with sr.Microphone(device_index=config.MICROPHONE_INDEX) as source:
-            recognizer.adjust_for_ambient_noise(
-                source, duration=config.AMBIENT_DURATION,
-            )
+            if not _calibrated:
+                publish("state", "Настраиваю микрофон…")
+                recognizer.adjust_for_ambient_noise(source, duration=config.AMBIENT_DURATION)
+                _calibrated = True
+            publish("state", "Слушаю…")
             audio = recognizer.listen(
                 source, timeout=timeout, phrase_time_limit=phrase_time_limit,
             )
@@ -137,6 +160,7 @@ def listen(
         speak("Сервис распознавания недоступен. Попробуйте ещё раз.")
         time.sleep(config.ERROR_RETRY_DELAY)
     except (OSError, AttributeError):
+        new_session()
         logger.exception("Микрофон недоступен или PyAudio не установлен")
         speak("Не удалось открыть микрофон. Проверьте его подключение.")
         time.sleep(config.ERROR_RETRY_DELAY)

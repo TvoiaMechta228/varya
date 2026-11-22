@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import deque
+import json
 import logging
 
 import aiohttp
@@ -22,17 +23,29 @@ enabled = False
 
 async def _request(messages: list[dict[str, str]]) -> str:
     """Дождаться ответа с ограничением времени и поддержкой остановки."""
-    payload = {"model": MODEL, "messages": messages, "stream": False,
+    payload = {"model": MODEL, "messages": messages, "stream": True,
                "options": {"num_predict": 140, "num_ctx": 4096}}
 
     async def generate(session: aiohttp.ClientSession) -> str:
         async with session.post(URL, json=payload, allow_redirects=False) as r:
             r.raise_for_status()
-            data = await r.json()
-        answer = data["message"]["content"].strip()
-        if not answer:
-            raise ValueError("Пустой ответ")
-        return answer
+            parts = []
+            async for line in r.content:
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                if "error" in data:
+                    raise ValueError("Модель прервала ответ")
+                token = data["message"]["content"]
+                if token:
+                    parts.append(token)
+                    speech.publish("delta", token)
+                if data.get("done"):
+                    answer = "".join(parts).strip()
+                    if answer:
+                        return answer
+                    break
+            raise ValueError("Ответ модели не завершён")
 
     timeout = aiohttp.ClientTimeout(total=120, connect=4)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
@@ -65,6 +78,8 @@ def reply(text: str) -> None:
             speech.speak("Не получила ответ. Проверь, запущена ли Ollama "
                          "с моделью qwen2.5:7b.")
         return
+    finally:
+        speech.publish("end_draft", "")
     if answer and not speech.is_cancelled():
         speech.speak(answer)
         if not speech.is_cancelled():

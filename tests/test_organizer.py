@@ -9,10 +9,10 @@ import settings
 from organizer import Organizer
 
 
-def test_organizer_and_voice_share_state(tmp_path, monkeypatch):
+def test_organizer_and_voice_share_state(tmp_path, monkeypatch, tk_root):
     monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
     monkeypatch.setattr(features, "_timers", [])
-    root = tk.Tk()
+    root = tk.Toplevel(tk_root)
     root.withdraw()
     try:
         tabs = ttk.Notebook(root)

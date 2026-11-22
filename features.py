@@ -42,6 +42,8 @@ def duration(text: str) -> int | None:
     match = re.fullmatch(
         r"(.+?)\s+(секунд[ауы]?|минут[ауы]?|час(?:а|ов)?)", text.strip(),
     )
+    if text.strip() in {"секунду", "минуту", "час"}:
+        return {"секунду": 1, "минуту": 60, "час": 3600}[text.strip()]
     if not match:
         return None
     number, unit = match.groups()
@@ -197,6 +199,7 @@ def handle(command: str, raw: str) -> bool:
     elif command in actions.MEDIA_KEYS:
         actions.media_control(command)
         logger.info("Выполнено: %s", command)
+        speech.publish("assistant", "Готово.")
     elif command in actions.WINDOW_KEYS:
         actions.window_control(command)
         speech.speak("Готово.")

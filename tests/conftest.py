@@ -18,3 +18,14 @@ def mute_speech(monkeypatch):
         **settings.DEFAULTS, "voice": "sapi",
     })
     return mock
+
+
+@pytest.fixture(scope="session")
+def tk_root():
+    """Разделить один интерпретатор Tk между тестами окон Windows."""
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.withdraw()
+    yield root
+    root.destroy()
