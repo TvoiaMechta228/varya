@@ -65,6 +65,11 @@ def open_app(name: str) -> bool:
     return True
 
 
+def open_service(name: str) -> None:
+    """Открыть известный веб-сервис по фиксированному адресу из конфигурации."""
+    _open_url(config.WEB_SHORTCUTS[name])
+
+
 def open_installed(name: str) -> bool:
     """Открыть единственное точное совпадение в каталоге Windows."""
     from win32com.client import Dispatch

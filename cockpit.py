@@ -43,6 +43,7 @@ class Reactor(tk.Canvas):
         self.compact = compact
         self.level = 0.0
         self.phase = 0
+        self.last_idle = None
         self.bind("<Map>", self.start)
         self.bind("<Unmap>", self.stop)
         self.bind("<Destroy>", self.stop)
@@ -70,6 +71,11 @@ class Reactor(tk.Canvas):
             or speaking
             or any(k in state for k in ("обрабатываю", "модель", "пишу", "измеряю"))
         )
+        idle = (w, h, state)
+        if not active and self.last_idle == idle:
+            self.timer = self.after(500, self.draw)
+            return
+        self.last_idle = None if active else idle
         self.phase += 1.8 if active else 0.42
         angle = self.phase
         accent = "#ffbd70" if speaking else "#57edde"
@@ -162,7 +168,7 @@ class Reactor(tk.Canvas):
             self.create_oval(
                 cx - rad, cy - rad, cx + rad, cy + rad, fill=color, outline=""
             )
-        self.timer = self.after(75 if active else 145, self.draw)
+        self.timer = self.after(100 if active else 500, self.draw)
 
 
 class Panels:
@@ -177,7 +183,7 @@ class Panels:
         for key, title in (
             ("cpu", "Процессор"),
             ("gpu", "Графика"),
-            ("ram", "Память"),
+            ("ram", "Память ПК"),
             ("disk", "Системный диск"),
         ):
             line = tk.Frame(self.left, bg=ui.PANEL)
@@ -193,6 +199,8 @@ class Panels:
         label(self.left, "Сеть", 10, ui.MUTED).pack(anchor="w", pady=(8, 1))
         self.network = label(self.left, "Измеряю…", 10)
         self.network.pack(anchor="w")
+        self.app_memory = label(self.left, "Варя · измеряю память", 9, ui.MUTED)
+        self.app_memory.pack(anchor="w", pady=(12, 0))
         label(self.right, "Быстрые задачи", 13, bold=True).pack(
             anchor="w", pady=(0, 12)
         )
@@ -223,6 +231,9 @@ class Panels:
         self.last.pack(anchor="w")
         self.queue = Queue(maxsize=2)
         self.closed = threading.Event()
+        self.visible = threading.Event()
+        self.left.bind("<Map>", lambda _: self.visible.set())
+        self.left.bind("<Unmap>", lambda _: self.visible.clear())
         self.left.bind(
             "<Destroy>", lambda e: self.closed.set() if e.widget is self.left else None
         )
@@ -237,7 +248,9 @@ class Panels:
         opener = build_opener(ProxyHandler({}))
         try:
             monitor = telemetry.Monitor()
-            while not self.closed.wait(1):
+            while not self.closed.wait(2):
+                if not self.visible.is_set():
+                    continue
                 if time.monotonic() >= next_check:
                     try:
                         with opener.open(
@@ -267,6 +280,8 @@ class Panels:
         except Empty:
             return
         self.service.config(text="Ollama  ·  " + model)
+        if "app_memory" in data:
+            self.app_memory.config(text=f"Варя · {data['app_memory']:.0f} МиБ")
         for key, (value, graph) in self.metrics.items():
             n = data.get(key)
             value.config(text="н/д" if n is None else f"{n:.0f}%")

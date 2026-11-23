@@ -220,11 +220,8 @@ def sequence_request(session, text: str) -> Result | None:
         return Result(str(error))
     if not steps:
         return None
-    session.mission = Plan("sequence", time.monotonic() + 90, mode(), steps=steps)
-    lines = [f"{i}. {step.title}" for i, step in enumerate(steps, 1)]
-    speech.publish("assistant", "\n".join(lines))
-    audit("Последовательность", "\n".join(lines))
-    return Result(f"Выполнить {len(steps)} шага по порядку? Да или нет?")
+    plan = Plan("sequence", time.monotonic() + 90, mode(), steps=steps)
+    return run(plan)
 
 
 def confirm(session, command: str) -> Result | None:

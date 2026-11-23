@@ -22,6 +22,9 @@ class Monitor:
     def __init__(self) -> None:
         self.query = None
         self.counter = None
+        self.gpu = None
+        self.next_gpu = 0.0
+        self.process = psutil.Process()
         self.net = psutil.net_io_counters()
         self.at = time.monotonic()
         psutil.cpu_percent()
@@ -40,8 +43,8 @@ class Monitor:
             self.query = self.counter = None
 
     def sample(self) -> dict:
-        gpu = None
-        if self.counter is not None:
+        gpu = self.gpu
+        if self.counter is not None and time.monotonic() >= self.next_gpu:
             try:
                 win32pdh.CollectQueryData(self.query)
                 engines = defaultdict(float)
@@ -52,8 +55,10 @@ class Monitor:
                         engines[name.partition("_luid_")[2]] += value
                 if engines:
                     gpu = min(100, max(engines.values()))
+                    self.gpu = gpu
             except pywintypes.error:
                 pass
+            self.next_gpu = time.monotonic() + 5
         now, net = time.monotonic(), psutil.net_io_counters()
         elapsed = max(0.01, now - self.at)
         received = max(0, net.bytes_recv - self.net.bytes_recv) / elapsed / 1024
@@ -67,6 +72,7 @@ class Monitor:
             disk=disk.percent,
             free=disk.free / 2**30,
             total=memory.total / 2**30,
+            app_memory=self.process.memory_info().rss / 2**20,
             rx=received,
             tx=sent,
         )

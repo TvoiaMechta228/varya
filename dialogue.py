@@ -21,7 +21,7 @@ _PHRASES = (
     (r"(?:заведи|включи|поставь) таймер", "таймер"),
     (r"(?:сделай снимок экрана|сделай скриншот)", "скриншот"),
     (r"(?:подскажи|скажи)[, ]+(?:который час|сколько времени)", "который час"),
-    (r"запусти(?: приложение)?", "открой"),
+    (r"(?:запусти|включи)(?: приложение)?", "открой"),
 )
 _RULES = [(re.compile(r"^" + pattern + r"(?=$|[\s,:.!?])", re.I), value)
           for pattern, value in _PHRASES]
@@ -36,6 +36,11 @@ def phrase(text: str) -> str:
     polite = re.fullmatch(r"(?:можешь|можно попросить тебя)\s+(\w+)\s+(.+?)\??", text, re.I)
     if polite and polite[1].lower() in _INFINITIVES:
         text = f"{_INFINITIVES[polite[1].lower()]} {polite[2]}"
+    if re.match(r"^(?:открой|запусти|включи|покажи|открыть|запустить)\b", text, re.I):
+        text = re.sub(r"[, ]+пожалуйста[.!?]*$", "", text, flags=re.I).rstrip(".!?")
+    head, _, tail = text.partition(" ")
+    if head.lower() in _INFINITIVES:
+        text = _INFINITIVES[head.lower()] + (" " + tail if tail else "")
     text = re.sub(r"^(открой|запусти|поставь),?\s+пожалуйста[, ]+", r"\1 ", text, flags=re.I)
     for pattern, replacement in _RULES:
         match = pattern.match(text)

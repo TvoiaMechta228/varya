@@ -61,15 +61,13 @@ def test_schema_rejects_unusable_proposal(value):
         Intent.parse(json.dumps(value))
 
 
-def test_model_search_then_user_confirmation(monkeypatch):
+def test_model_search_executes_without_extra_confirmation(monkeypatch):
     monkeypatch.setattr(pc, "interpret", AsyncMock(return_value=Intent("search", "оладьи & кефир")))
     monkeypatch.setattr(conversation, "enabled", True)
     monkeypatch.setattr(settings, "_current", {**settings.DEFAULTS, "wake_word": True})
     monkeypatch.setattr(actions, "search_web", search := Mock())
     session = Dialogue()
     main.route_command("Варя, отыщи рецепт оладий на кефире", dialogue=session)
-    search.assert_not_called()
-    main.route_command("да", dialogue=session)
     search.assert_called_once_with("оладьи & кефир")
     assert session.proposal is None
 

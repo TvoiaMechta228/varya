@@ -7,6 +7,7 @@ import logging
 import re
 
 import aiohttp
+import psutil
 
 import speech
 
@@ -21,6 +22,16 @@ SYSTEM = (
 )
 history: deque[dict[str, str]] = deque(maxlen=12)
 enabled = False
+MEMORY_MESSAGE = (
+    "Память компьютера почти заполнена. Разговорная модель сейчас слишком тяжёлая. "
+    "Освободи память или используй команды — браузер, музыка, окна и таймеры доступны без модели."
+)
+
+
+def memory_pressure() -> bool:
+    """Не начинать тяжёлую генерацию при нехватке оперативной памяти."""
+    memory = psutil.virtual_memory()
+    return memory.percent >= 90 and memory.available < 1.5 * 2**30
 
 
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
@@ -33,7 +44,8 @@ class LanguageDrift(ValueError):
 async def _request(messages: list[dict[str, str]]) -> str:
     """Дождаться ответа с ограничением времени и поддержкой остановки."""
     payload = {"model": MODEL, "messages": messages, "stream": True,
-               "options": {"num_predict": 140, "num_ctx": 4096, "temperature": 0.25}}
+               "keep_alive": "30s",
+               "options": {"num_predict": 140, "num_ctx": 2048, "temperature": 0.25}}
 
     user_text = messages[-1]["content"]
     russian = (bool(re.search("[а-яё]", user_text, re.I)) and not _CJK.search(user_text)
@@ -80,7 +92,7 @@ async def _request(messages: list[dict[str, str]]) -> str:
             except LanguageDrift:
                 return "Не получилось сформулировать ответ по-русски. Перефразируй вопрос."
 
-    timeout = aiohttp.ClientTimeout(total=120, connect=4)
+    timeout = aiohttp.ClientTimeout(total=35, connect=3)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
         task = asyncio.create_task(generate(session))
         try:
@@ -97,6 +109,9 @@ async def _request(messages: list[dict[str, str]]) -> str:
 
 def reply(text: str, *, context: tuple[str, str] = ("", "")) -> None:
     """Озвучить ответ и сохранить в памяти только завершённый обмен."""
+    if memory_pressure():
+        speech.speak(MEMORY_MESSAGE)
+        return
     if len(text) > 2000:
         speech.speak("Раздели, пожалуйста, вопрос на несколько частей.")
         return

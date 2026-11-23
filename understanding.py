@@ -95,14 +95,15 @@ def ordinary_question(text: str) -> bool:
 async def interpret(text: str, last_result: str = "") -> Intent:
     """Получить и проверить JSON с возможностью прервать холодный запуск модели."""
     payload = {"model": conversation.MODEL, "stream": False, "format": SCHEMA,
+               "keep_alive": "30s",
                "messages": [{"role": "system", "content": INSTRUCTIONS},
                             {"role": "user", "content": json.dumps(
                                 {"request": text, "previous_result": last_result[:240]},
                                 ensure_ascii=False)}],
-               "options": {"temperature": 0, "num_predict": 160, "num_ctx": 4096}}
+               "options": {"temperature": 0, "num_predict": 160, "num_ctx": 2048}}
 
     async def request() -> Intent:
-        timeout = aiohttp.ClientTimeout(total=120, connect=3)
+        timeout = aiohttp.ClientTimeout(total=25, connect=3)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as client:
             async with client.post(conversation.URL, json=payload, allow_redirects=False) as response:
                 response.raise_for_status()

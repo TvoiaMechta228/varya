@@ -6,12 +6,14 @@ import pytest
 
 import speech
 import settings
+import conversation
 
 
 @pytest.fixture(autouse=True)
 def mute_speech(monkeypatch, tmp_path):
     """Подменить синтез и паузы для каждого теста."""
     monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(conversation, "memory_pressure", lambda: False)
     monkeypatch.setattr(settings, "SETTINGS_FILE", tmp_path / "settings.json")
     mock = Mock(return_value=True)
     monkeypatch.setattr(speech, "speak", mock)

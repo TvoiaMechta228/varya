@@ -11,6 +11,8 @@ import aiohttp
 from win32com.shell import shell, shellcon
 
 import actions
+import config
+import conversation
 from command_results import Result, timer_reference, window_action
 from dialogue import Dialogue
 import desktop
@@ -93,6 +95,10 @@ def perform(session: Dialogue, intent: Intent) -> Result:
     if action == "app":
         if not arg:
             return Result(session.ask("открой", "Какое приложение открыть?")[1])
+        arg = config.APP_ALIASES.get(arg.casefold(), arg.casefold())
+        if arg in config.WEB_SHORTCUTS:
+            actions.open_service(arg)
+            return Result(f"Открываю {arg}.")
         if actions.open_app(arg) or (settings.snapshot().get("installed_apps") and actions.open_installed(arg.casefold())):
             return Result(f"Открываю {arg}.")
         return Result(f"«{arg}» нет среди разрешённых программ. Список есть в настройках Вари.")
@@ -168,6 +174,9 @@ def direct(session: Dialogue, command: str, raw: str = "") -> Result | None:
         return perform(session, Intent("quieter" if volume[1] == "потише" else "louder"))
     if match := re.fullmatch(r"(?:открой|покажи|перейди в) (?:папку )?(.+)", command):
         value = _ALIASES.get(match[1], match[1])
+        app = config.APP_ALIASES.get(value, value)
+        if app in config.APP_WHITELIST or app in config.WEB_SHORTCUTS:
+            return perform(session, Intent("app", app))
         if value in FOLDERS:
             return open_location("folder", value)
         if page := re.fullmatch(r"(?:настройки|параметры) (.+)", value):
@@ -191,6 +200,8 @@ def understand(session: Dialogue, text: str) -> Result | None:
     """Интерпретировать незнакомую реплику; None передаёт обычный вопрос в чат."""
     if ordinary_question(text) or len(text) > 2000:
         return None
+    if conversation.memory_pressure():
+        return Result(conversation.MEMORY_MESSAGE)
     try:
         speech.publish("state", "Разбираю просьбу…")
         intent = asyncio.run(interpret(text, session.last_result))
@@ -203,7 +214,7 @@ def understand(session: Dialogue, text: str) -> Result | None:
         return Result("")
     if intent.action == "chat":
         return None
-    if intent.action in {"search", "app", "note", "screenshot", "focus", "minimize", "maximize"}:
+    if intent.action in {"note"}:
         labels = {"search": "Искать в Яндексе", "app": "Открыть приложение",
                   "note": "Сохранить заметку", "screenshot": "Сохранить снимок экрана",
                   "focus": "Переключиться на окно", "minimize": "Свернуть окно",

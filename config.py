@@ -27,6 +27,17 @@ PICTURES_DIR = Path.home() / "Pictures"
 WINDOWS_DIR = Path(os.environ.get("SystemRoot", r"C:\Windows"))
 SHUTDOWN_EXE = str(WINDOWS_DIR / "System32" / "shutdown.exe")
 BROWSER_URL = "https://ya.ru"
+WEB_SHORTCUTS = {
+    "яндекс музыка": "https://music.yandex.ru/",
+    "яндекс музыку": "https://music.yandex.ru/",
+    "музыка": "https://music.yandex.ru/",
+    "музыку": "https://music.yandex.ru/",
+    "ютуб": "https://www.youtube.com/",
+    "youtube": "https://www.youtube.com/",
+    "яндекс": BROWSER_URL,
+}
+APP_ALIASES = {"интернет": "браузер", "браузера": "браузер",
+               "нотпад": "блокнот", "пэйнт": "paint", "паинт": "paint"}
 # Windows 11 может предоставлять Paint через App Execution Alias.
 PAINT_EXE = WINDOWS_DIR / "System32" / "mspaint.exe"
 if not PAINT_EXE.is_file():

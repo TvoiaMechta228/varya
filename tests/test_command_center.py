@@ -183,8 +183,7 @@ def test_sequence_is_ordered_and_stops_after_failure(session, monkeypatch):
         "сначала открой блокнот, потом калькулятор, затем сделай скриншот",
         dialogue=session,
     )
-    launch.assert_not_called()
-    main.route_command("да", dialogue=session)
+    assert session.mission is None
     assert [call.args[0] for call in launch.call_args_list] == [
         "блокнот",
         "калькулятор",
@@ -286,3 +285,73 @@ def test_russian_layout_paste_shortcut():
     event = SimpleNamespace(keycode=86, state=4, keysym="Cyrillic_em", widget=field)
     assert entry_shortcut(event) == "break"
     field.event_generate.assert_called_once_with("<<Paste>>")
+
+
+@pytest.mark.parametrize("utterance", [
+    "Открой браузер Запусти музыку",
+    "открой браузер и включи музыку",
+    "можешь открыть браузер и запустить музыку?",
+    "открой браузер, затем включи яндекс музыку",
+])
+def test_browser_and_music_use_local_ordered_actions(session, monkeypatch, utterance):
+    import requests_pc
+    monkeypatch.setattr(actions, "open_app", app := Mock(return_value=True))
+    monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
+    main.route_command(utterance, dialogue=session, typed=True)
+    app.assert_called_once_with("браузер")
+    service.assert_called_once()
+    assert service.call_args.args[0] in {"музыку", "яндекс музыку"}
+    inference.assert_not_called()
+    assert session.mission is None and session.proposal is None
+
+
+@pytest.mark.parametrize("utterance", [
+    "Открой Яндекс музыку",
+    "Включи музыку пожалуйста",
+    "можешь запустить яндекс музыку?",
+])
+def test_music_does_not_require_model_or_confirmation(session, monkeypatch, utterance):
+    import requests_pc
+    monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
+    main.route_command(utterance, dialogue=session, typed=True)
+    service.assert_called_once()
+    inference.assert_not_called()
+    assert session.proposal is None
+
+
+def test_compound_failure_is_not_silently_partial(session, monkeypatch):
+    monkeypatch.setattr(actions, "open_app", launch := Mock())
+    main.route_command("открой браузер и удали документы", dialogue=session, typed=True)
+    launch.assert_not_called()
+    assert "Ни один шаг" in session.last_result
+
+
+def test_note_keeps_embedded_imperatives(session, monkeypatch):
+    monkeypatch.setattr(actions, "open_app", launch := Mock())
+    main.route_command("запомни открой браузер и запусти музыку", dialogue=session, typed=True)
+    launch.assert_not_called()
+    assert session.selected_note == "открой браузер и запусти музыку"
+
+
+def test_service_url_is_fixed(monkeypatch):
+    monkeypatch.setattr(actions.webbrowser, "open", browser := Mock(return_value=True))
+    actions.open_service("яндекс музыку")
+    browser.assert_called_once_with("https://music.yandex.ru/", new=2)
+    with pytest.raises(KeyError):
+        actions.open_service("https://unknown.invalid")
+
+
+def test_low_memory_keeps_local_actions_available(session, monkeypatch):
+    import conversation
+    import requests_pc
+    monkeypatch.setattr(conversation, "memory_pressure", lambda: True)
+    monkeypatch.setattr(conversation, "enabled", True)
+    monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
+    monkeypatch.setattr(actions, "open_service", service := Mock())
+    main.route_command("включи музыку", dialogue=session, typed=True)
+    service.assert_called_once()
+    main.route_command("сделай неведомое действие", dialogue=session, typed=True)
+    inference.assert_not_called()
+    assert "Память компьютера" in session.last_result

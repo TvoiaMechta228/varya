@@ -528,7 +528,7 @@ class VaryaWindow:
             self.clear_choices()
         if self.organizer.winfo_ismapped():
             self.organizer.refresh()
-        self.root.after(250, self.tick)
+        self.root.after(500 if self.root.winfo_viewable() else 2000, self.tick)
 
     def card(self, kind: str, value: str) -> None:
         """Встроить карточку результата непосредственно в ленту диалога."""

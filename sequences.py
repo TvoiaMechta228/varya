@@ -20,14 +20,19 @@ class Step:
 def parse(text: str) -> tuple[Step, ...] | None:
     """Разделить явную последовательность. Продиктованный текст остаётся данными."""
     if re.match(
-        r"^(?:запомни|запиши|поищи|найди в интернете|напечатай)\b",
+        r"^(?:запомни|запиши|сохрани заметку|напомни|поищи|найди|напечатай)\b",
         text.strip(),
         re.IGNORECASE,
     ):
         return None
+    # В цитатах могут встречаться глаголы, которые являются частью названия.
+    if any(mark in text for mark in ('"', '«', '»')):
+        return None
     parts = re.split(
-        r"(?:\s*[,;]\s*|\s+)(?:а\s+)?(?:затем|потом|после этого|далее)\s+",
-        text.strip(),
+        r"(?:\s*[,;]\s*|\s+)(?:а\s+)?(?:затем|потом|после этого|далее)\s+"
+        r"|(?:\s*[,;]\s*|\s+(?:и\s+)?)(?=(?:открой|запусти|включи|покажи|"
+        r"сделай|выключи|перезагрузи|удали|закрой|найди|запустить|открыть|включить)\b)",
+        re.sub(r"^сначала\s+", "", text.strip(), flags=re.I),
         flags=re.IGNORECASE,
     )
     if len(parts) < 2:
@@ -38,10 +43,13 @@ def parse(text: str) -> tuple[Step, ...] | None:
 
     steps = []
     for part in parts:
-        raw = phrase(re.sub(r"^сначала\s+", "", part.strip(), flags=re.IGNORECASE))
+        raw = phrase(re.sub(r"^сначала\s+", "", part.strip(" ,;.!?"), flags=re.IGNORECASE))
         key = normalize_text(raw)
         open_target = key.removeprefix("открой ").removeprefix("покажи ")
-        if open_target in config.APP_WHITELIST:
+        open_target = config.APP_ALIASES.get(open_target, open_target)
+        if open_target in config.WEB_SHORTCUTS:
+            step = Step("service", open_target, "Открыть " + open_target)
+        elif open_target in config.APP_WHITELIST:
             step = Step("app", open_target, "Открыть " + open_target)
         elif (folder := _ALIASES.get(open_target, open_target)) in FOLDERS:
             step = Step("folder", folder, "Открыть папку «" + folder + "»")
@@ -64,7 +72,9 @@ def parse(text: str) -> tuple[Step, ...] | None:
 
 
 def execute(step: Step) -> None:
-    if step.action == "app":
+    if step.action == "service":
+        actions.open_service(step.argument)
+    elif step.action == "app":
         if not actions.open_app(step.argument):
             raise OSError("Программа недоступна.")
     elif step.action in {"folder", "settings"}:
