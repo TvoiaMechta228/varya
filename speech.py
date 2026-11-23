@@ -21,6 +21,8 @@ shutdown_event: threading.Event | None = None
 _neural_retry_at = 0.0
 _sapi_preference = None
 _calibrated = False
+_last_service_error = float("-inf")
+quiet_reply: ContextVar[bool] = ContextVar("quiet_reply", default=False)
 transcript: ContextVar[Callable[[str, str], None] | None] = ContextVar(
     "transcript", default=None,
 )
@@ -104,11 +106,14 @@ def speak(text: str) -> bool:
     """Озвучить текст; при сбое вывести его в консоль и вернуть False."""
     global _engine, _neural_retry_at, _sapi_preference
     publish("assistant", text)
-    publish("state", "Озвучиваю ответ…")
-    logger.info("Ответ: %s", text)
+    if settings.snapshot()["save_history"]:
+        logger.info("Ответ: %s", text)
     if sys.stdout is not None:
         print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
     options = settings.snapshot()
+    if quiet_reply.get():
+        return not is_cancelled()
+    publish("state", "Озвучиваю ответ…")
     if options["voice"] == "neural" and time.monotonic() >= _neural_retry_at:
         try:
             import neural_voice
@@ -120,6 +125,7 @@ def speak(text: str) -> bool:
             logger.warning("Нейроголос недоступен; использую голос Windows",
                            exc_info=True)
             _neural_retry_at = time.monotonic() + 60
+            publish("notice", "Сетевой голос недоступен. Использую голос Windows.")
     if is_cancelled():
         return False
     try:
@@ -174,6 +180,8 @@ class MeterStream:
         self.last = 0.0
 
     def read(self, frames):
+        if is_cancelled():
+            raise InterruptedError("Прослушивание остановлено")
         chunk = self.stream.read(frames)
         now = time.monotonic()
         if chunk and now - self.last > .08:
@@ -192,12 +200,12 @@ def listen(
     phrase_time_limit: float = config.PHRASE_TIME_LIMIT,
 ) -> str | None:
     """Слушать одну реплику; при тишине или ошибке вернуть None."""
-    global _calibrated
+    global _calibrated, _last_service_error
     try:
         if is_cancelled():
             return None
         recognizer = _get_recognizer()
-        with sr.Microphone(device_index=config.MICROPHONE_INDEX) as source:
+        with sr.Microphone(device_index=settings.snapshot().get("microphone", config.MICROPHONE_INDEX)) as source:
             if not _calibrated:
                 publish("state", "Настраиваю микрофон…")
                 recognizer.adjust_for_ambient_noise(source, duration=config.AMBIENT_DURATION)
@@ -213,17 +221,23 @@ def listen(
         text = recognizer.recognize_google(audio, language=config.LANGUAGE)
         if is_cancelled():
             return None
-        logger.info("Распознано: %s", text)
+        if settings.snapshot()["save_history"]:
+            logger.info("Распознано: %s", text)
         return text
     except sr.WaitTimeoutError:
         logger.debug("Таймаут ожидания речи")
     except sr.UnknownValueError:
         logger.info("Речь не разобрана")
+        publish("notice", "Не расслышала. Повтори просьбу или напиши её внизу окна.")
     except sr.RequestError:
         logger.warning("Сервис распознавания недоступен", exc_info=True)
-        speak("Сервис распознавания недоступен. Попробуйте ещё раз.")
+        if time.monotonic() - _last_service_error >= 30:
+            _last_service_error = time.monotonic()
+            speak("Сервис распознавания недоступен. Можно написать сообщение внизу окна.")
         time.sleep(config.ERROR_RETRY_DELAY)
-    except (OSError, AttributeError):
+    except InterruptedError:
+        return None
+    except (OSError, AttributeError, ValueError, AssertionError):
         new_session()
         publish("mic_unavailable", "")
         logger.exception("Микрофон недоступен или PyAudio не установлен")

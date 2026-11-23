@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 import json
+import math
 import logging
 from math import ceil
 from threading import RLock
@@ -17,6 +18,51 @@ logger = logging.getLogger(__name__)
 _timers: list[tuple[str, float]] = []
 _timer_lock = RLock()
 _note_lock = RLock()
+
+
+def save_timers() -> None:
+    """Сохранить сроки в календарном времени для восстановления после перезапуска."""
+    with _timer_lock:
+        now, wall = time.monotonic(), time.time()
+        data = [{"name": name, "deadline": wall + end - now} for name, end in _timers]
+        try:
+            settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            path = settings.DATA_DIR / "timers.json"
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            logger.exception("Не удалось сохранить таймеры")
+            speech.publish("notice", "Таймеры работают, но сохранить их для перезапуска не удалось.")
+
+
+def load_timers() -> str | None:
+    """Восстановить таймеры; пропущенные сигналы сообщить после запуска Вари."""
+    global _timers
+    path = settings.DATA_DIR / "timers.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list) or len(data) > 10:
+            raise ValueError("Некорректный список таймеров")
+        timers = []
+        names = set()
+        now, wall = time.monotonic(), time.time()
+        for item in data:
+            name, end = item["name"], item["deadline"]
+            if (not isinstance(name, str) or not 1 <= len(name) <= 48
+                    or name.casefold() in names or type(end) not in (float, int)
+                    or not math.isfinite(end) or end - wall > 86400):
+                raise ValueError("Некорректный таймер")
+            names.add(name.casefold())
+            timers.append((name, now + min(86400, end - wall)))
+        with _timer_lock:
+            _timers = timers
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.exception("Не удалось восстановить таймеры")
+        return "Не удалось прочитать сохранённые таймеры. Проверь файл timers.json в папке данных."
+    return None
 HELP = (
     "Джарвис, проверь компьютер • обслуживание ПК • проверь обновления программ\n"
     "Прочитай экран • прочитай выбранное окно • покажи непрочитанные письма\n"
@@ -111,6 +157,8 @@ def expired_names() -> list[str]:
         now = time.monotonic()
         names = [name for name, end in _timers if end <= now]
         _timers[:] = [(name, end) for name, end in _timers if end > now]
+        if names:
+            save_timers()
         return names
 
 
@@ -137,6 +185,7 @@ def add_timer(name: str, seconds: int) -> str:
         if len(name) > 48 or name.casefold() in used:
             raise ValueError("Выберите свободное название до 48 символов.")
         _timers.append((name, time.monotonic() + seconds))
+        save_timers()
         return name
 
 
@@ -146,6 +195,7 @@ def cancel_timer(name: str) -> bool:
         for timer in _timers:
             if timer[0].casefold() == name.casefold():
                 _timers.remove(timer)
+                save_timers()
                 return True
     return False
 

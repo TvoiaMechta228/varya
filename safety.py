@@ -37,7 +37,13 @@ def confirm(action: str, *, target: str = "") -> bool:
     expected, prompt = _CONFIRMATIONS[action]
     if target:
         prompt = f"{target}. {prompt}"
-    if not speech.speak(prompt):
+    token = speech.quiet_reply.set(False)
+    speech.publish("state", "Жду точную голосовую фразу подтверждения…")
+    try:
+        spoken = speech.speak(prompt)
+    finally:
+        speech.quiet_reply.reset(token)
+    if not spoken:
         logger.warning("Подтверждение отменено: приглашение не озвучено")
         return False
     try:

@@ -68,6 +68,9 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
                                   and normalize_text(text) in requests_pc.REPLIES))):
             return True
     original = text
+    if len(text) > 2000:
+        speech.speak("Раздели просьбу на сообщения до 2000 символов.")
+        return True
     speech.publish("user", text)
     command = normalize_text(text)
     try:
@@ -187,10 +190,10 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
         else:
             speech.speak("Команда не распознана.")
     except (OSError, subprocess.SubprocessError, ValueError):
-        logger.exception("Не удалось выполнить команду: %s", text)
+        logger.exception("Не удалось выполнить команду")
         speech.speak("Не удалось выполнить команду. Подробности в журнале.")
     except Exception:
-        logger.exception("Непредвиденная ошибка действия: %s", text)
+        logger.exception("Непредвиденная ошибка действия")
         speech.speak("Произошла ошибка. Попробуйте ещё раз.")
     return True
 
@@ -207,6 +210,9 @@ def main() -> None:
         print(f"Не удалось открыть журнал: {error}")
         return
     try:
+        timer_warning = features.load_timers()
+        if timer_warning:
+            speech.speak(timer_warning)
         speech.speak(f"Я {config.ASSISTANT_NAME}. Слушаю ваши команды.")
         dialogue = Dialogue()
         while True:

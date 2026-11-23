@@ -95,7 +95,7 @@ def test_settings_validation_and_reload():
                    "wake_word": "false", "shell": "evil"})
     settings.load()
     assert settings.snapshot() == {
-        "voice": "neural", "rate": 230, "volume": 10, "wake_word": False,
+        **settings.DEFAULTS, "voice": "neural", "rate": 230, "volume": 10, "wake_word": False,
     }
 
 

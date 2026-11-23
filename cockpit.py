@@ -258,8 +258,8 @@ class Panels:
                         ) as response:
                             models = json.loads(response.read(512000))["models"]
                         model = (
-                            "готова"
-                            if any(m.get("name") == conversation.MODEL for m in models)
+                            "установлена"
+                            if any(m.get("name") == conversation.model_name() for m in models)
                             else "нет модели"
                         )
                     except (ValueError, OSError, KeyError, TypeError):

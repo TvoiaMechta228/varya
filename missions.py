@@ -106,10 +106,13 @@ class Plan:
 
 def progress(detail: str) -> None:
     speech.publish("mission", detail)
-    logging.getLogger(__name__).info("Шаг: %s", detail)
+    if settings.snapshot()["save_history"]:
+        logging.getLogger(__name__).info("Шаг: %s", detail)
 
 
 def audit(kind: str, detail: str) -> None:
+    if not settings.snapshot()["save_history"]:
+        return
     try:
         files.record(kind, detail)
     except (OSError, sqlite3.Error):
@@ -312,7 +315,8 @@ def execute(plan: Plan) -> Result:
                 )
             audit("Шаг выполнен", step.title)
             completed += 1
-        return Result(f"Выполнено шагов — {completed} из {len(plan.steps)}.")
+        titles = ". ".join(step.title for step in plan.steps[:completed])
+        return Result(f"Выполнено шагов — {completed} из {len(plan.steps)}. {titles}.")
     if plan.kind == "cleanup":
         progress("Проверяю файлы перед перемещением в корзину")
         return Result(maintenance.recycle(plan.candidates, stopped))

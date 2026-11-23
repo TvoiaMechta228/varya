@@ -33,6 +33,7 @@ _INFINITIVES = {"открыть": "открой", "запустить": "зап�
 def phrase(text: str) -> str:
     """Нормализовать формулировку просьбы, сохраняя текст заметок и поиска."""
     text = re.sub(r"^пожалуйста[, ]+", "", text.strip(), flags=re.I)
+    text = re.sub(r"^(открой|запусти|включи|покажи)\s+(?:мне|нам)\s+", r"\1 ", text, flags=re.I)
     polite = re.fullmatch(r"(?:можешь|можно попросить тебя)\s+(\w+)\s+(.+?)\??", text, re.I)
     if polite and polite[1].lower() in _INFINITIVES:
         text = f"{_INFINITIVES[polite[1].lower()]} {polite[2]}"

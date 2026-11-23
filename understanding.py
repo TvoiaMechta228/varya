@@ -94,7 +94,7 @@ def ordinary_question(text: str) -> bool:
 
 async def interpret(text: str, last_result: str = "") -> Intent:
     """Получить и проверить JSON с возможностью прервать холодный запуск модели."""
-    payload = {"model": conversation.MODEL, "stream": False, "format": SCHEMA,
+    payload = {"model": conversation.model_name(), "stream": False, "format": SCHEMA,
                "keep_alive": "30s",
                "messages": [{"role": "system", "content": INSTRUCTIONS},
                             {"role": "user", "content": json.dumps(

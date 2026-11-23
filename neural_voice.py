@@ -15,8 +15,8 @@ async def synthesize(text: str, rate: int, cancelled: Callable) -> bytes:
 
     percent = round((rate / 175 - 1) * 100)
     communicator = edge_tts.Communicate(
-        text, VOICE, rate=f"{percent:+d}%", connect_timeout=5,
-        receive_timeout=8,
+        text, VOICE, rate=f"{percent:+d}%", connect_timeout=3,
+        receive_timeout=5,
     )
     audio = bytearray()
     async for chunk in communicator.stream():
@@ -35,7 +35,7 @@ def speak(text: str, rate: int, volume: int, cancelled: Callable) -> bool:
     import pygame.mixer as mixer
 
     async def request() -> bytes:
-        task = asyncio.create_task(asyncio.wait_for(synthesize(text, rate, cancelled), 12))
+        task = asyncio.create_task(asyncio.wait_for(synthesize(text, rate, cancelled), 6))
         try:
             while not task.done():
                 if cancelled():

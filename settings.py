@@ -9,6 +9,8 @@ DATA_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Varya"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 DEFAULTS = {
     "voice": "neural", "rate": 175, "volume": 85, "wake_word": False,
+    "speak_typed": False, "microphone": None, "model": "qwen2.5:7b",
+    "save_history": True,
 }
 _lock = threading.RLock()
 _current = dict(DEFAULTS)
@@ -24,6 +26,18 @@ def validate(values: dict) -> dict:
             result[key] = max(low, min(high, values[key]))
     if type(values.get("wake_word")) is bool:
         result["wake_word"] = values["wake_word"]
+    if type(values.get("speak_typed")) is bool:
+        result["speak_typed"] = values["speak_typed"]
+    if type(values.get("save_history")) is bool:
+        result["save_history"] = values["save_history"]
+    mic = values.get("microphone")
+    if type(mic) is int and 0 <= mic < 1024:
+        result["microphone"] = mic
+    model = values.get("model")
+    if isinstance(model, str) and 0 < len(model) <= 100:
+        import re
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
+            result["model"] = model
     if isinstance(values.get("sapi_voice"), str) and values["sapi_voice"]:
         result["sapi_voice"] = values["sapi_voice"]
     if values.get("installed_apps") is True:

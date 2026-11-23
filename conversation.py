@@ -22,6 +22,12 @@ SYSTEM = (
 )
 history: deque[dict[str, str]] = deque(maxlen=12)
 enabled = False
+
+
+def model_name() -> str:
+    """Вернуть выбранную пользователем локальную модель."""
+    import settings
+    return settings.snapshot().get("model", MODEL)
 MEMORY_MESSAGE = (
     "Память компьютера почти заполнена. Разговорная модель сейчас слишком тяжёлая. "
     "Освободи память или используй команды — браузер, музыка, окна и таймеры доступны без модели."
@@ -43,7 +49,7 @@ class LanguageDrift(ValueError):
 
 async def _request(messages: list[dict[str, str]]) -> str:
     """Дождаться ответа с ограничением времени и поддержкой остановки."""
-    payload = {"model": MODEL, "messages": messages, "stream": True,
+    payload = {"model": model_name(), "messages": messages, "stream": True,
                "keep_alive": "30s",
                "options": {"num_predict": 140, "num_ctx": 2048, "temperature": 0.25}}
 
@@ -128,7 +134,7 @@ def reply(text: str, *, context: tuple[str, str] = ("", "")) -> None:
         logging.getLogger(__name__).warning("Ошибка локальной Ollama", exc_info=True)
         if not speech.is_cancelled():
             speech.speak("Разговорная модель сейчас недоступна. Проверь Ollama "
-                         "с моделью qwen2.5:7b.")
+                         f"и наличие модели {model_name()}. Модель можно выбрать в настройках.")
         return
     finally:
         speech.publish("end_draft", "")

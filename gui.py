@@ -117,7 +117,20 @@ class AssistantController:
                     self.events.put(("stopped", "Микрофон выключен"))
                     continue
                 if kind == "preview":
-                    speech.speak("Привет! Я Варя. Как меня слышно?")
+                    try:
+                        speech.cancel_event = self.stopping
+                        speech.speak("Привет! Я Варя. Как меня слышно?")
+                    finally:
+                        self.events.put(("sent", ""))
+                    continue
+                if kind == "devices":
+                    try:
+                        names = speech.sr.Microphone.list_microphone_names()
+                        self.events.put(("devices", names))
+                    except (OSError, AttributeError):
+                        self.events.put(("notice", "Не удалось получить список микрофонов. Проверь устройства и PyAudio."))
+                    finally:
+                        self.events.put(("devices_done", ""))
                     continue
                 speech.cancel_event = self.stopping
                 if speech.is_cancelled():
@@ -138,10 +151,15 @@ class AssistantController:
                     if text and not speech.is_cancelled():
                         choice_version += 1
                         self.events.put(("state", "Обрабатываю сообщение…"))
-                        if kind == "typed":
+                        if kind == "typed" and settings.snapshot()["save_history"]:
                             logger.info("Введено: %s", text)
-                        if not main.route_command(text, dialogue=dialogue, typed=kind == "typed",
-                                                  require_wake=self.background.is_set()):
+                        quiet = speech.quiet_reply.set(kind == "typed" and not settings.snapshot()["speak_typed"])
+                        try:
+                            running = main.route_command(text, dialogue=dialogue, typed=kind == "typed",
+                                                         require_wake=self.background.is_set())
+                        finally:
+                            speech.quiet_reply.reset(quiet)
+                        if not running:
                             self.events.put(("exit", ""))
                             break
                         if dialogue.mission or dialogue.proposal:
@@ -223,7 +241,8 @@ class VaryaWindow:
         ttk.Label(header, text=" /  J.A.R.V.I.S.", foreground=ui.ACCENT,
                   font=("Consolas", 12, "bold")).pack(side="left", padx=4)
         self.status = tk.StringVar(value="Микрофон выключен")
-        ttk.Label(header, textvariable=self.status, style="Quiet.TLabel").pack(side="right")
+        ttk.Label(header, textvariable=self.status, style="Quiet.TLabel",
+                  wraplength=280, justify="right").pack(side="right")
         self.light = tk.Label(header, text="●", fg=ui.MUTED, bg=ui.BG)
         self.light.pack(side="right", padx=6)
         self.status.trace_add("write", lambda *_: self.light.configure(
@@ -269,8 +288,8 @@ class VaryaWindow:
         self.reactor.pack(fill="both", expand=True, pady=(5,0))
         tk.Label(self.suggestions, text="Чем займёмся?", bg=ui.PANEL, fg=ui.INK,
                  font=("Segoe UI Semibold", 19)).pack()
-        tk.Label(self.suggestions, text="Скажи «Джарвис» или напиши задачу", bg=ui.PANEL,
-                 fg=ui.MUTED, font=("Segoe UI", 10)).pack(pady=(1,9))
+        tk.Label(self.suggestions, text="Напиши задачу внизу или нажми «Включить микрофон»", bg=ui.PANEL,
+                 fg=ui.MUTED, font=("Segoe UI", 10), wraplength=350).pack(pady=(1,9))
         row = tk.Frame(self.suggestions, bg=ui.PANEL)
         row.pack(pady=(0,12))
         for title, prompt in (("Таймер для чая", "можешь поставить таймер для чая?"),
@@ -341,6 +360,30 @@ class VaryaWindow:
         panel.bind("<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
         options = settings.snapshot()
+        ttk.Label(panel, text="Микрофон", style="Title.TLabel").pack(anchor="w", pady=(0, 8))
+        current_mic = options.get("microphone")
+        self.device_ids = {"Устройство Windows по умолчанию": None}
+        selected = "Устройство Windows по умолчанию"
+        if current_mic is not None:
+            selected = f"Микрофон №{current_mic}"
+            self.device_ids[selected] = current_mic
+        self.microphone_var = tk.StringVar(value=selected)
+        self.microphone_box = ttk.Combobox(panel, textvariable=self.microphone_var,
+                                         values=tuple(self.device_ids), state="readonly", width=50)
+        self.microphone_box.pack(anchor="w", fill="x", pady=3)
+        self.devices_button = ttk.Button(panel, text="Обновить список микрофонов", command=self.refresh_devices)
+        self.devices_button.pack(anchor="w", pady=(3, 12))
+        self.speak_typed = tk.BooleanVar(value=options["speak_typed"])
+        ttk.Checkbutton(panel, text="Озвучивать ответы на текстовые сообщения",
+                        variable=self.speak_typed).pack(anchor="w", pady=6)
+        self.save_history = tk.BooleanVar(value=options["save_history"])
+        ttk.Checkbutton(panel, text="Сохранять текст запросов и ответов на этом ПК",
+                        variable=self.save_history).pack(anchor="w", pady=6)
+        ttk.Label(panel, text="Модель для свободных вопросов (установленная в Ollama)").pack(anchor="w", pady=(10, 3))
+        self.model_var = tk.StringVar(value=options["model"])
+        ttk.Entry(panel, textvariable=self.model_var, width=35).pack(anchor="w")
+        ttk.Label(panel, text="Выбор модели применяется после сохранения. Встроенные команды работают без Ollama.",
+                  wraplength=580).pack(anchor="w", pady=(3, 12))
         ttk.Label(panel, text="Управление", style="Title.TLabel").pack(anchor="w")
         self.mode_var = tk.StringVar(value=options.get("mode", "Помощник"))
         ttk.Combobox(panel, textvariable=self.mode_var, state="readonly",
@@ -373,7 +416,7 @@ class VaryaWindow:
         self.voice = tk.StringVar(value=options["voice"])
         for title, value in (
             ("Эмма — нейросетевой женский голос (интернет)", "neural"),
-            ("Ирина — локальный русский голос Windows", "sapi"),
+            ("Установленный голос Windows (без интернета)", "sapi"),
         ):
             ttk.Radiobutton(panel, text=title, value=value,
                             variable=self.voice).pack(anchor="w", pady=6)
@@ -424,9 +467,15 @@ class VaryaWindow:
     def save_settings(self) -> bool:
         """Проверить поля и сохранить без прямых вызовов аудио из Tk."""
         try:
+            model = self.model_var.get().strip()
+            if settings.validate({"model": model})["model"] != model:
+                raise ValueError("Укажи имя модели Ollama, например qwen2.5:7b.")
             if self.busy and self.mode_var.get() != missions.mode():
                 self.stop()
             settings.save({
+                "microphone": self.device_ids[self.microphone_var.get()],
+                "speak_typed": self.speak_typed.get(), "model": model,
+                "save_history": self.save_history.get(),
                 "mode": self.mode_var.get(), "project": self.project_var.get(),
                 "work_apps": [name for name, var in self.work_vars.items() if var.get()],
                 "voice": self.voice.get(), "rate": self.rate.get(),
@@ -437,12 +486,25 @@ class VaryaWindow:
             messagebox.showerror("Настройки", str(error), parent=self.root)
             return False
         logger.info("Настройки сохранены")
+        self.status.set("Настройки сохранены")
+        speech.new_session()
         return True
+
+    def refresh_devices(self) -> None:
+        """Запросить устройства в рабочем потоке без блокировки окна."""
+        if self.busy:
+            self.status.set("Останови текущую задачу перед обновлением устройств")
+            return
+        self.devices_button.configure(state="disabled")
+        self.controller.commands.put(("devices", ""))
 
     def submit_command(self, suggestion: str | None = None, *, version: int | None = None) -> None:
         """Поставить одно сообщение в очередь, сохранив текущую голосовую сессию."""
         text = suggestion or self.command_text.get().strip()
         if not text or self.closing or self.stopping or self.sending:
+            return
+        if len(text) > 2000:
+            self.status.set("Сообщение слишком длинное — максимум 2000 символов")
             return
         self.sending = self.busy = True
         self.controller.stopping.clear()
@@ -481,6 +543,12 @@ class VaryaWindow:
         if self.busy:
             messagebox.showinfo("Голос", "Сначала остановите прослушивание.")
         elif self.save_settings():
+            self.busy = self.sending = True
+            self.controller.stopping.clear()
+            self.start_button.configure(state="disabled")
+            self.send_button.configure(state="disabled")
+            self.stop_button.configure(state="normal")
+            self.preview_button.configure(state="disabled")
             self.controller.commands.put(("preview", ""))
 
     def start(self) -> None:
@@ -646,6 +714,18 @@ class VaryaWindow:
                     self.append_turn(kind, text)
                 elif kind == "private_text":
                     self.append_turn("assistant", text)
+                elif kind == "notice":
+                    self.status.set(text)
+                    self.append_turn("assistant", text)
+                elif kind == "devices":
+                    selected = self.device_ids.get(self.microphone_var.get())
+                    self.device_ids = {"Устройство Windows по умолчанию": None}
+                    self.device_ids.update({f"{i} · {name}": i for i, name in enumerate(text)})
+                    self.microphone_box.configure(values=tuple(self.device_ids))
+                    self.microphone_var.set(next((name for name, index in self.device_ids.items()
+                                                  if index == selected), "Устройство Windows по умолчанию"))
+                elif kind == "devices_done":
+                    self.devices_button.configure(state="normal")
                 elif kind == "level":
                     self.reactor.level = self.compact_core.level = float(text)
                 elif kind == "mission":
@@ -676,6 +756,7 @@ class VaryaWindow:
                     if kind == "stopped":
                         self.listening = self.stopping = False
                     self.sending = False
+                    self.preview_button.configure(state="normal")
                     self.busy = self.listening
                     self.send_button.configure(state="normal")
                     self.stop_button.configure(state="normal" if self.busy else "disabled")
@@ -699,6 +780,25 @@ class VaryaWindow:
 
 def run() -> None:
     """Запустить оконную версию, сообщив об ошибке журнала."""
+    import hashlib
+    import win32api
+    import win32con
+    import win32event
+    import win32gui
+    import winerror
+
+    identity = hashlib.sha256(str(settings.DATA_DIR).casefold().encode()).hexdigest()[:16]
+    mutex = win32event.CreateMutex(None, False, "Local\\Varya-" + identity)
+    if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+        existing = win32gui.FindWindow(None, "Варя · J.A.R.V.I.S.")
+        if existing:
+            win32gui.ShowWindow(existing, win32con.SW_RESTORE)
+            try:
+                win32gui.SetForegroundWindow(existing)
+            except win32gui.error:
+                pass
+        win32api.CloseHandle(mutex)
+        return
     root = tk.Tk()
     root.withdraw()
     settings.load()
@@ -708,10 +808,14 @@ def run() -> None:
         messagebox.showerror("Варя", f"Не удалось открыть журнал: {error}")
         root.destroy()
         return
+    timer_warning = features.load_timers()
     window = VaryaWindow(root)
+    if timer_warning:
+        window.events.put(("notice", timer_warning))
     window.tray = Tray(window.events)
     root.deiconify()
     root.mainloop()
+    win32api.CloseHandle(mutex)
 
 
 if __name__ == "__main__":
