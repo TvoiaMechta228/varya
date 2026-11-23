@@ -65,6 +65,20 @@ def open_app(name: str) -> bool:
     return True
 
 
+def open_installed(name: str) -> bool:
+    """Открыть единственное точное совпадение в каталоге Windows."""
+    from win32com.client import Dispatch
+
+    catalog = Dispatch("Shell.Application").NameSpace("shell:AppsFolder")
+    if catalog is None:
+        return False
+    found = [item for item in catalog.Items() if safety.normalize_text(item.Name) == name]
+    if len(found) != 1:
+        return False
+    found[0].InvokeVerb("open")
+    return True
+
+
 def search_web(query: str) -> None:
     """Открыть поиск Яндекса, кодируя запрос как параметр URL."""
     query = query.strip()
@@ -102,7 +116,7 @@ def take_screenshot() -> Path:
 def shutdown_pc() -> bool:
     """Запланировать выключение после нового голосового подтверждения."""
     _require_windows()
-    if not safety.confirm("shutdown"):
+    if not safety.confirm("shutdown") or safety.speech.is_cancelled():
         return False
     subprocess.run(
         [config.SHUTDOWN_EXE, "/s", "/t", "10"], check=True, shell=False,
@@ -113,7 +127,7 @@ def shutdown_pc() -> bool:
 def reboot_pc() -> bool:
     """Запланировать перезагрузку только после голосового подтверждения."""
     _require_windows()
-    if not safety.confirm("reboot"):
+    if not safety.confirm("reboot") or safety.speech.is_cancelled():
         return False
     subprocess.run(
         [config.SHUTDOWN_EXE, "/r", "/t", "10"], check=True, shell=False,

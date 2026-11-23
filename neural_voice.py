@@ -35,7 +35,17 @@ def speak(text: str, rate: int, volume: int, cancelled: Callable) -> bool:
     import pygame.mixer as mixer
 
     async def request() -> bytes:
-        return await asyncio.wait_for(synthesize(text, rate, cancelled), 12)
+        task = asyncio.create_task(asyncio.wait_for(synthesize(text, rate, cancelled), 12))
+        try:
+            while not task.done():
+                if cancelled():
+                    return b""
+                await asyncio.wait({task}, timeout=0.10)
+            return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     audio = asyncio.run(request())
     if cancelled() or not audio:

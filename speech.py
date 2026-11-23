@@ -19,6 +19,7 @@ _engine: Any = None
 cancel_event: threading.Event | None = None
 shutdown_event: threading.Event | None = None
 _neural_retry_at = 0.0
+_sapi_preference = None
 _calibrated = False
 transcript: ContextVar[Callable[[str, str], None] | None] = ContextVar(
     "transcript", default=None,
@@ -65,6 +66,26 @@ def _get_recognizer() -> sr.Recognizer:
     return _recognizer
 
 
+def windows_voices() -> dict[str, str]:
+    """Прочитать установленные голоса SAPI из реестра без открытия аудиоустройства."""
+    import winreg
+
+    voices = {}
+    branch = r"SOFTWARE\Microsoft\Speech\Voices\Tokens"
+    for hive, prefix in ((winreg.HKEY_LOCAL_MACHINE, "HKEY_LOCAL_MACHINE"),
+                         (winreg.HKEY_CURRENT_USER, "HKEY_CURRENT_USER")):
+        try:
+            with winreg.OpenKey(hive, branch) as tokens:
+                for i in range(winreg.QueryInfoKey(tokens)[0]):
+                    name = winreg.EnumKey(tokens, i)
+                    with winreg.OpenKey(tokens, name) as token:
+                        title = winreg.QueryValue(token, None)
+                        voices[title] = "\\".join((prefix, branch, name))
+        except OSError:
+            continue
+    return voices
+
+
 def _voice_description(voice: Any) -> str:
     """Собрать метаданные голоса, включая языки в байтовой форме."""
     languages = [
@@ -79,8 +100,9 @@ def _voice_description(voice: Any) -> str:
 
 def speak(text: str) -> bool:
     """Озвучить текст; при сбое вывести его в консоль и вернуть False."""
-    global _engine, _neural_retry_at
+    global _engine, _neural_retry_at, _sapi_preference
     publish("assistant", text)
+    publish("state", "Озвучиваю ответ…")
     logger.info("Ответ: %s", text)
     if sys.stdout is not None:
         print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
@@ -99,14 +121,18 @@ def speak(text: str) -> bool:
     if is_cancelled():
         return False
     try:
-        if _engine is None:
+        preference = options.get("sapi_voice", "")
+        if _engine is None or (_sapi_preference is not None and preference != _sapi_preference):
             import pyttsx3
 
             _engine = pyttsx3.init(driverName="sapi5")
             _engine.setProperty("rate", config.SPEECH_RATE)
-            for voice in _engine.getProperty("voices"):
+            _sapi_preference = preference
+            voices = _engine.getProperty("voices")
+            selected = [v for v in voices if v.id == preference]
+            for voice in selected or voices:
                 description = _voice_description(voice)
-                if any(tag in description for tag in (
+                if selected or any(tag in description for tag in (
                     "ru-ru", "ru_ru", "russian", "рус", "irina", "0419",
                 )):
                     _engine.setProperty("voice", voice.id)
@@ -116,7 +142,20 @@ def speak(text: str) -> bool:
         _engine.setProperty("rate", options["rate"])
         _engine.setProperty("volume", options["volume"] / 100)
         _engine.say(text)
-        _engine.runAndWait()
+        if cancel_event is None:
+            _engine.runAndWait()
+        else:
+            _engine.startLoop(False)
+            try:
+                _engine.iterate()
+                while _engine.isBusy():
+                    if is_cancelled():
+                        _engine.stop()
+                        return False
+                    _engine.iterate()
+                    time.sleep(0.02)
+            finally:
+                _engine.endLoop()
         return True
     except Exception:
         # COM-драйверы выбрасывают собственные типы исключений.
@@ -161,8 +200,9 @@ def listen(
         time.sleep(config.ERROR_RETRY_DELAY)
     except (OSError, AttributeError):
         new_session()
+        publish("mic_unavailable", "")
         logger.exception("Микрофон недоступен или PyAudio не установлен")
-        speak("Не удалось открыть микрофон. Проверьте его подключение.")
+        speak("Не удалось открыть микрофон. Напишите сообщение в поле ввода.")
         time.sleep(config.ERROR_RETRY_DELAY)
     except Exception:
         logger.exception("Непредвиденная ошибка распознавания")

@@ -30,21 +30,29 @@ def windows() -> list[tuple[int, int, str]]:
     return items
 
 
-def named_window(verb: str, name: str) -> str:
-    """Найти единственное совпадение, перепроверить цель после подтверждения."""
-    items = windows()
+WINDOW_VERBS = {"сверни", "разверни", "закрой", "переключись на"}
+
+
+def match_windows(items, name: str) -> list[tuple[int, int, str]]:
+    """Предпочесть точное совпадение заголовка частичному."""
     key = safety.normalize_text(name)
-    if not key:
-        return "Уточни название окна."
-    matches = [w for w in items if key == safety.normalize_text(w[2])]
-    if not matches:
-        matches = [w for w in items if key in safety.normalize_text(w[2])]
+    exact = [w for w in items if key == safety.normalize_text(w[2])]
+    return exact or [w for w in items if key in safety.normalize_text(w[2])]
+
+
+def named_window(verb: str, name: str) -> str:
+    """Выбрать окно по однозначному названию."""
+    matches = match_windows(windows(), name)
     if not matches:
         return "Не вижу окна с таким названием."
     if len(matches) > 1:
         return "Подходит несколько окон. Уточни название. " + ". ".join(
             w[2][:100] for w in matches[:3])
-    target = matches[0]
+    return apply_window(verb, matches[0])
+
+
+def apply_window(verb: str, target: tuple[int, int, str]) -> str:
+    """Выполнить действие с проверенной целью."""
     hwnd, _, title = target
     if verb == "закрой":
         if not safety.confirm("close_window", target=title):
@@ -130,19 +138,6 @@ def execute(command: str, raw: str) -> str | None:
     if command in folders:
         os.startfile(shell.SHGetFolderPath(0, folders[command], 0, 0))
         return "Открываю папку."
-    if command.startswith("запусти приложение "):
-        from win32com.client import Dispatch
-
-        wanted = command.removeprefix("запусти приложение ").casefold()
-        catalog = Dispatch("Shell.Application").NameSpace("shell:AppsFolder")
-        if catalog is None:
-            return "Каталог приложений Windows недоступен."
-        found = [item for item in catalog.Items()
-                 if safety.normalize_text(item.Name) == wanted]
-        if len(found) != 1:
-            return "Назови точное название приложения из меню Пуск."
-        found[0].InvokeVerb("open")
-        return "Передала Windows запрос на запуск."
     if not (command.startswith("курсор на ") or command in {
         "где курсор", "левый клик", "правый клик", "двойной клик",
         "прокрути вниз", "прокрути вверх",

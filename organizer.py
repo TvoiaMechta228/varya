@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import scrolledtext, ttk
 
+import appearance as ui
 import features
 import settings
 
@@ -54,7 +55,7 @@ class Organizer(ttk.Frame):
         self.query = tk.StringVar()
         ttk.Entry(row, textvariable=self.query).pack(fill="x", expand=True)
         self.results = scrolledtext.ScrolledText(
-            self, height=5, wrap="word", state="disabled", font=("Segoe UI", 11),
+            self, height=4, wrap="word", state="disabled", bg=ui.PANEL, fg=ui.INK, relief="flat", font=("Segoe UI", 11),
         )
         self.results.pack(fill="both", expand=True)
         self.cache_key = None

@@ -39,6 +39,8 @@ HELP = (
 
 def duration(text: str) -> int | None:
     """Разобрать длительность 1–86400 секунд с русскими числительными."""
+    if text.strip() in {"полчаса", "пол часа", "половину часа"}:
+        return 1800
     match = re.fullmatch(
         r"(.+?)\s+(секунд[ауы]?|минут[ауы]?|час(?:а|ов)?)", text.strip(),
     )
@@ -212,18 +214,6 @@ def handle(command: str, raw: str) -> bool:
         speech.speak(". ".join(f"{name}, осталось {sec} секунд"
                                for name, sec in active)
                      if active else "Активных таймеров нет.")
-    elif match := re.fullmatch(r"(?:поставь )?таймер(?: (.+?))? на (.+)", command):
-        name, period = match.groups()
-        seconds = duration(period)
-        if seconds is None:
-            speech.speak("Укажите время от одной секунды до 24 часов.")
-        else:
-            try:
-                label = add_timer(name or "", seconds)
-            except ValueError as error:
-                speech.speak(str(error))
-            else:
-                speech.speak(f"{label}. Отсчёт начался.")
     elif command == "отмени таймеры":
         with _timer_lock:
             _timers.clear()
@@ -235,9 +225,6 @@ def handle(command: str, raw: str) -> bool:
             speech.speak(f"До ближайшего таймера {seconds} секунд.")
         else:
             speech.speak("Активных таймеров нет.")
-    elif command.startswith("запомни "):
-        remember(raw.split(maxsplit=1)[1])
-        speech.speak("Заметка сохранена на этом компьютере.")
     elif command == "мои заметки":
         notes = read_notes()
         speech.speak("Последние заметки: " + "; ".join(

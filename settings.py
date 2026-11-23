@@ -24,6 +24,10 @@ def validate(values: dict) -> dict:
             result[key] = max(low, min(high, values[key]))
     if type(values.get("wake_word")) is bool:
         result["wake_word"] = values["wake_word"]
+    if isinstance(values.get("sapi_voice"), str) and values["sapi_voice"]:
+        result["sapi_voice"] = values["sapi_voice"]
+    if values.get("installed_apps") is True:
+        result["installed_apps"] = True
     return result
 
 

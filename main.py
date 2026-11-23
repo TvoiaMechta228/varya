@@ -6,12 +6,14 @@ from logging.handlers import RotatingFileHandler
 import os
 import re
 import subprocess
+import time
 
 import actions
 import config
 import conversation
 import desktop
-from dialogue import Dialogue, phrase
+from dialogue import Dialogue
+import command_results
 import features
 import settings
 from safety import normalize_text
@@ -48,6 +50,7 @@ def parse_search_query(text: str) -> str | None:
 def route_command(text: str, *, dialogue: Dialogue | None = None,
                   typed: bool = False) -> bool:
     """Выполнить команду; False означает завершение ассистента."""
+    heard_at = time.monotonic()
     prefix = re.match(r"^варя(?:\s*[,!:.]\s*|\s+|$)", text.strip(), re.I)
     if prefix:
         text = text.strip()[prefix.end():].strip()
@@ -56,7 +59,9 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             return True
     elif (not typed and settings.snapshot()["wake_word"]
           and normalize_text(text) not in {"стоп", "выход", "пока"}):
-        return True
+        if not (dialogue and dialogue.pending in {"duration", "запомни", "найди в интернете"}
+                and heard_at < dialogue.until):
+            return True
     original = text
     speech.publish("user", text)
     command = normalize_text(text)
@@ -64,19 +69,34 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
         if command in {"стоп", "выход", "пока"}:
             speech.speak("До свидания!")
             return False
-        if dialogue is not None:
-            text, question = dialogue.prepare(text)
-            if question:
-                speech.speak(question)
-                return True
-        else:
-            text = phrase(text)
+        session = dialogue if dialogue is not None else Dialogue()
+        text, question = session.prepare(text, now=heard_at)
+        if question:
+            speech.speak(question)
+            return True
         command = normalize_text(text)
+        if speech.is_cancelled():
+            return True
+
+        def answer(message: str) -> None:
+            session.last_request = original
+            session.last_result = message
+            speech.speak(message)
+
+        result = command_results.execute(session, command, text)
+        if result:
+            if result.card:
+                speech.publish(result.card, result.value)
+            answer(result.text)
+            return True
+        if command in {"забудь разговор", "режим команд", "закончи разговор"}:
+            session.last_request = session.last_result = session.selected_timer = session.selected_note = ""
+            session.selected_window = None
         if conversation.control(command):
             return True
         response = desktop.execute(command, text)
         if response is not None:
-            speech.speak(response)
+            answer(response)
             return True
         if features.handle(command, text):
             return True
@@ -84,21 +104,22 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
         if query is not None:
             if query:
                 actions.search_web(query)
-                speech.speak("Открываю поиск Яндекса.")
+                answer(f"Открываю поиск Яндекса по запросу «{query}».")
             else:
                 speech.speak(
                     "Произнесите запрос после слов: найди в интернете.",
                 )
         elif command.startswith("открой "):
-            if actions.open_app(command.removeprefix("открой ")):
-                speech.speak("Открываю.")
+            app = command.removeprefix("открой ")
+            if actions.open_app(app):
+                answer(f"Открываю {app}.")
+            elif settings.snapshot().get("installed_apps"):
+                answer(f"Открываю {app}." if actions.open_installed(app)
+                       else "Назови точное имя приложения в меню Пуск.")
             else:
-                speech.speak("Этой программы нет в белом списке.")
+                answer("Этой программы нет в белом списке.")
         elif command in {"который час", "сколько времени"}:
             speech.speak(f"Сейчас {datetime.now():%H:%M}.")
-        elif command == "скриншот":
-            path = actions.take_screenshot()
-            speech.speak(f"Скриншот сохранён: {path}.")
         elif command == "выключи компьютер":
             if actions.shutdown_pc():
                 speech.speak("Выключение через десять секунд.")
@@ -109,7 +130,7 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             actions.cancel_shutdown()
             speech.speak("Запланированное выключение отменено.")
         elif conversation.enabled:
-            conversation.reply(original)
+            conversation.reply(original, context=(session.last_request, session.last_result))
         else:
             speech.speak("Команда не распознана.")
     except (OSError, subprocess.SubprocessError, ValueError):
