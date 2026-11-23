@@ -31,6 +31,8 @@ def publish(role: str, text: str) -> None:
     listener = transcript.get()
     if listener is not None:
         listener(role, text)
+    elif role == "private_text" and sys.stdout is not None:
+        print(text, flush=True)
 
 
 def new_session() -> None:
@@ -164,6 +166,27 @@ def speak(text: str) -> bool:
         return False
 
 
+class MeterStream:
+    """Передавать индикатору только уровень сигнала во время чтения микрофона."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.last = 0.0
+
+    def read(self, frames):
+        chunk = self.stream.read(frames)
+        now = time.monotonic()
+        if chunk and now - self.last > .08:
+            samples = memoryview(chunk).cast("h")[::8]
+            rms = (sum(v*v for v in samples) / max(1,len(samples))) ** .5
+            publish("level", str(min(1.0, rms / 4500)))
+            self.last = now
+        return chunk
+
+    def close(self):
+        self.stream.close()
+
+
 def listen(
     *, timeout: float = config.LISTEN_TIMEOUT,
     phrase_time_limit: float = config.PHRASE_TIME_LIMIT,
@@ -179,6 +202,8 @@ def listen(
                 publish("state", "Настраиваю микрофон…")
                 recognizer.adjust_for_ambient_noise(source, duration=config.AMBIENT_DURATION)
                 _calibrated = True
+            if transcript.get() is not None and source.SAMPLE_WIDTH == 2:
+                source.stream = MeterStream(source.stream)
             publish("state", "Слушаю…")
             audio = recognizer.listen(
                 source, timeout=timeout, phrase_time_limit=phrase_time_limit,

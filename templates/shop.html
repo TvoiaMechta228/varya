@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Магазин керамики</title><style>:root{color-scheme:light;font:16px 'Segoe UI',sans-serif;background:#f4f1eb;color:#242f2b}body{max-width:760px;margin:8vh auto;padding:0 24px}h1{font:normal clamp(36px,9vw,66px) Georgia;margin:0 0 32px}h2{font-size:20px}form,article{padding:18px 0;border-top:1px solid #b9c4bb;display:flex;flex-wrap:wrap;gap:12px;align-items:center}label{display:grid;gap:5px}input,button{font:inherit;padding:9px 14px;border:1px solid #9bad9e;border-radius:6px}button{background:#264e40;color:white;cursor:pointer}li{padding:6px 0}output{font-size:24px}button:focus-visible,input:focus-visible{outline:3px solid #956031}</style></head><body><main><h1>Магазин керамики</h1>
+<p>Демонстрационный каталог · без оплаты и отправки заказов</p><section id="catalog"></section><h2>Корзина</h2><ul id="cart"></ul><output id="total" aria-live="polite"></output>
+</main><script>
+const products = [['Чашка',850],['Кувшин',2400],['Тарелка',1100]];
+const counts = products.map(() => 0);
+function render() {
+  const list = document.getElementById('cart'); list.replaceChildren();
+  products.forEach(([name,price],i) => {
+    if (!counts[i]) return;
+    const li = document.createElement('li'), remove = document.createElement('button');
+    li.textContent = name + ' × ' + counts[i] + ' '; remove.textContent = 'Убрать одну';
+    remove.onclick = () => { counts[i]--; render(); }; li.append(remove); list.append(li);
+  });
+  document.getElementById('total').textContent = 'Итого ' + products.reduce((a,p,i) => a + counts[i]*p[1],0).toLocaleString('ru-RU') + ' ₽';
+}
+products.forEach(([name,price],i) => {
+  const row = document.createElement('article'), button = document.createElement('button');
+  row.textContent = name + ' · ' + price + ' ₽'; button.textContent = 'В корзину';
+  button.onclick = () => { counts[i]++; render(); }; row.append(button); document.getElementById('catalog').append(row);
+});
+render();
+</script></body></html>

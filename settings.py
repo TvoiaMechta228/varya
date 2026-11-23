@@ -28,6 +28,15 @@ def validate(values: dict) -> dict:
         result["sapi_voice"] = values["sapi_voice"]
     if values.get("installed_apps") is True:
         result["installed_apps"] = True
+    if values.get("mode") in {"Наблюдатель", "Автономный", "Расширенный", "Помощник"}:
+        result["mode"] = values["mode"]
+    apps = values.get("work_apps")
+    if isinstance(apps, list):
+        from config import APP_WHITELIST
+        result["work_apps"] = [name for name in APP_WHITELIST if name in apps]
+    project = values.get("project")
+    if isinstance(project, str) and project and Path(project).is_absolute():
+        result["project"] = project
     return result
 
 

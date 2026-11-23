@@ -15,6 +15,7 @@ from command_results import Result, timer_reference, window_action
 from dialogue import Dialogue
 import desktop
 import features
+import missions
 import settings
 import speech
 from understanding import Intent, interpret, ordinary_question
@@ -61,6 +62,8 @@ def open_location(action: str, value: str) -> Result:
 def perform(session: Dialogue, intent: Intent) -> Result:
     """Выполнить проверенную локальную операцию; аргументы остаются данными."""
     action, arg = intent.action, intent.argument
+    if action in {"diagnose", "sort", "work", "check", "agenda"}:
+        return missions.request(session, action)
     if action in {"folder", "settings"}:
         return open_location(action, arg)
     if action == "timer":

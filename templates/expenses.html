@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Мои расходы</title><style>:root{color-scheme:light;font:16px 'Segoe UI',sans-serif;background:#f4f1eb;color:#242f2b}body{max-width:760px;margin:8vh auto;padding:0 24px}h1{font:normal clamp(36px,9vw,66px) Georgia;margin:0 0 32px}h2{font-size:20px}form,article{padding:18px 0;border-top:1px solid #b9c4bb;display:flex;flex-wrap:wrap;gap:12px;align-items:center}label{display:grid;gap:5px}input,button{font:inherit;padding:9px 14px;border:1px solid #9bad9e;border-radius:6px}button{background:#264e40;color:white;cursor:pointer}li{padding:6px 0}output{font-size:24px}button:focus-visible,input:focus-visible{outline:3px solid #956031}</style></head><body><main><h1>Мои расходы</h1>
+<form id="form"><label>Покупка<input id="label" maxlength="120" required></label><label>Сумма, ₽<input id="amount" type="number" min=".01" max="99999999" step=".01" required></label><button>Добавить расход</button></form>
+<h2>Итого</h2><output id="sum"></output><ul id="items"></ul><p id="status" role="status"></p>
+</main><script>
+const get = id => document.getElementById(id);
+const currency = cents => (cents / 100).toLocaleString('ru-RU',{style:'currency',currency:'RUB'});
+const key = 'varya-expenses:' + location.pathname;
+let rows = [];
+try { const value = JSON.parse(localStorage.getItem(key) || '[]'); rows = value.filter(r => typeof r.name === 'string' && Number.isSafeInteger(r.cents) && r.cents > 0); }
+catch { get('status').textContent = 'Сохранённые данные прочитать не удалось.'; }
+function render() {
+  get('sum').textContent = currency(rows.reduce((a,r) => a + r.cents,0));
+  get('items').replaceChildren(...rows.map(r => { const item = document.createElement('li'); item.textContent = r.name + ' · ' + currency(r.cents); return item; }));
+}
+get('form').onsubmit = event => {
+  event.preventDefault();
+  const name = get('label').value.trim(), cents = Math.round(get('amount').valueAsNumber * 100);
+  if (!name || !Number.isSafeInteger(cents) || cents < 1) return;
+  rows.push({name,cents});
+  try { localStorage.setItem(key,JSON.stringify(rows)); get('status').textContent = 'Расход сохранён в этом браузере.'; }
+  catch { get('status').textContent = 'Браузер отключил сохранение. Запись доступна до закрытия страницы.'; }
+  render(); event.target.reset(); get('label').focus();
+};
+render();
+</script></body></html>

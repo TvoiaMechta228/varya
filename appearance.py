@@ -4,13 +4,13 @@ import math
 import tkinter as tk
 from tkinter import ttk
 
-BG = "#19191e"
-PANEL = "#222229"
-FIELD = "#2b2b35"
-INK = "#f3f1fa"
-MUTED = "#b6b2c4"
-ACCENT = "#c1a9fb"
-EDGE = "#393740"
+BG = "#0a141e"
+PANEL = "#101f2b"
+FIELD = "#19313d"
+INK = "#eaf4f5"
+MUTED = "#9bb3bd"
+ACCENT = "#64e4d3"
+EDGE = "#28414b"
 
 
 def theme(root: tk.Misc) -> None:
@@ -27,16 +27,16 @@ def theme(root: tk.Misc) -> None:
     style.configure("Title.TLabel", font=("Segoe UI Semibold", 23), foreground=INK)
     style.configure("Quiet.TLabel", foreground=MUTED)
     style.configure("TButton", padding=(12, 7), background=FIELD, borderwidth=1)
-    style.map("TButton", background=[("pressed", "#4a415c"), ("active", "#403a4b")],
-              foreground=[("disabled", "#898592")])
+    style.map("TButton", background=[("pressed", "#254f57"), ("active", "#24404d")],
+              foreground=[("disabled", "#788d96")])
     style.configure("Accent.TButton", background=ACCENT, foreground=BG)
-    style.map("Accent.TButton", background=[("disabled", FIELD), ("active", "#d5c5ff")],
+    style.map("Accent.TButton", background=[("disabled", FIELD), ("active", "#99f9e7")],
               foreground=[("disabled", MUTED)])
     for widget in ("TEntry", "TSpinbox", "Treeview"):
         style.configure(widget, fieldbackground=PANEL, foreground=INK, insertcolor=INK)
     style.configure("Treeview", background=PANEL, rowheight=28)
     style.configure("Treeview.Heading", background=FIELD)
-    style.map("Treeview", background=[("selected", "#51465f")])
+    style.map("Treeview", background=[("selected", "#284d59")])
     for widget in ("TCheckbutton", "TRadiobutton"):
         style.map(widget, background=[("active", PANEL)])
     style.configure("Vertical.TScrollbar", background=FIELD, arrowsize=12)

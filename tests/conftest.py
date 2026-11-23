@@ -9,8 +9,10 @@ import settings
 
 
 @pytest.fixture(autouse=True)
-def mute_speech(monkeypatch):
+def mute_speech(monkeypatch, tmp_path):
     """Подменить синтез и паузы для каждого теста."""
+    monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "SETTINGS_FILE", tmp_path / "settings.json")
     mock = Mock(return_value=True)
     monkeypatch.setattr(speech, "speak", mock)
     monkeypatch.setattr(speech.time, "sleep", Mock())

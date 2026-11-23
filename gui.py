@@ -7,10 +7,14 @@ from queue import Empty, Queue
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import appearance as ui
 import config
+import cockpit
+import missions
+import workspace_tasks
+from tray import Tray
 import conversation
 from dialogue import Dialogue
 import features
@@ -22,6 +26,16 @@ import speech
 logger = logging.getLogger(__name__)
 
 
+def entry_shortcut(event):
+    """Сохранить сочетания редактирования при любой активной раскладке Windows."""
+    shortcuts = {65: "<<SelectAll>>", 67: "<<Copy>>", 86: "<<Paste>>", 88: "<<Cut>>"}
+    virtual = shortcuts.get(event.keycode)
+    if virtual and not event.state & 0x20000:  # AltGr оставляем раскладке.
+        event.widget.event_generate(virtual)
+        return "break"
+    return None
+
+
 class AssistantController:
     """Управлять одной речевой сессией и безопасной остановкой."""
 
@@ -30,6 +44,7 @@ class AssistantController:
         self.events = events
         self.stopping = threading.Event()
         self.closing = threading.Event()
+        self.background = threading.Event()
         self.commands: Queue = Queue()
         self.alarms: Queue = Queue()
         self.thread = threading.Thread(
@@ -74,6 +89,8 @@ class AssistantController:
             if kind == "mic_unavailable":
                 device_failed = True
             else:
+                if kind in {"user", "assistant"}:
+                    missions.audit("Запрос" if kind == "user" else "Ответ", text)
                 self.events.put((kind, text))
 
         token = speech.transcript.set(publish)
@@ -123,11 +140,12 @@ class AssistantController:
                         self.events.put(("state", "Обрабатываю сообщение…"))
                         if kind == "typed":
                             logger.info("Введено: %s", text)
-                        if not main.route_command(text, dialogue=dialogue, typed=kind == "typed"):
+                        if not main.route_command(text, dialogue=dialogue, typed=kind == "typed",
+                                                  require_wake=self.background.is_set()):
                             self.events.put(("exit", ""))
                             break
-                        if dialogue.proposal:
-                            choice_deadline = dialogue.proposal.expires
+                        if dialogue.mission or dialogue.proposal:
+                            choice_deadline = (dialogue.mission or dialogue.proposal).expires
                             choices = ("Да", "Нет")
                         elif dialogue.pending == "кнопки выбранного окна":
                             choice_deadline = dialogue.until
@@ -170,18 +188,25 @@ class VaryaWindow:
         self.stopping = False
         conversation.enabled = True
         self.controller = AssistantController(self.events)
-        root.title("Варя — голосовой ассистент")
-        width = min(860, root.winfo_screenwidth() - 40)
-        height = min(660, root.winfo_screenheight() - 88)
+        self.tray = None
+        root.title("Варя · J.A.R.V.I.S.")
+        width = min(1220, root.winfo_screenwidth() - 40)
+        height = min(780, root.winfo_screenheight() - 88)
         root.geometry(f"{width}x{height}")
         root.minsize(610, 460)
         ui.theme(root)
-        tabs = ttk.Notebook(root, takefocus=True)
+        self.tabs = tabs = ttk.Notebook(root, takefocus=True)
         tabs.pack(fill="both", expand=True, padx=16, pady=12)
         frame = ttk.Frame(tabs, padding=(16, 6, 16, 8))
-        tabs.add(frame, text="Диалог")
+        tabs.add(frame, text="Командный центр")
         self.organizer = Organizer(tabs)
         tabs.add(self.organizer, text="Мои дела")
+        self.log_page = ttk.Frame(tabs, padding=14)
+        tabs.add(self.log_page, text="Журнал")
+        self.log_view = scrolledtext.ScrolledText(self.log_page, wrap="word", state="disabled",
+            font=("Segoe UI", 11), relief="flat", padx=15, pady=12, bg=ui.PANEL, fg=ui.INK)
+        self.log_view.pack(fill="both", expand=True)
+        self.log_page.bind("<Map>", lambda _: self.refresh_log())
         self.make_settings(tabs)
         commands = ttk.Frame(tabs, padding=20)
         tabs.add(commands, text="Команды")
@@ -194,11 +219,9 @@ class VaryaWindow:
         guide.configure(state="disabled")
         header = ttk.Frame(frame)
         header.pack(fill="x", pady=(0, 12))
-        mark = tk.Canvas(header, width=42, height=42, bg=ui.BG, highlightthickness=0)
-        mark.pack(side="left", padx=(0, 10))
-        mark.create_oval(2, 2, 40, 40, fill=ui.FIELD, outline=ui.EDGE)
-        ui.wave(mark, 21, 22, .17)
         ttk.Label(header, text="Варя", style="Title.TLabel").pack(side="left")
+        ttk.Label(header, text=" /  J.A.R.V.I.S.", foreground=ui.ACCENT,
+                  font=("Consolas", 12, "bold")).pack(side="left", padx=4)
         self.status = tk.StringVar(value="Микрофон выключен")
         ttk.Label(header, textvariable=self.status, style="Quiet.TLabel").pack(side="right")
         self.light = tk.Label(header, text="●", fg=ui.MUTED, bg=ui.BG)
@@ -209,8 +232,25 @@ class VaryaWindow:
         controls = ttk.Frame(frame)
         controls.pack(side="bottom", fill="x", pady=(9, 0))
         entry_row.pack(side="bottom", fill="x", pady=(10, 0))
-        body = tk.Frame(frame, bg=ui.PANEL, highlightthickness=1, highlightbackground=ui.EDGE)
-        body.pack(fill="both", expand=True)
+        stage = tk.Frame(frame, bg=ui.BG)
+        stage.pack(fill="both", expand=True)
+        stage.grid_rowconfigure(0, weight=1)
+        stage.grid_columnconfigure(1, weight=1)
+        self.panels = cockpit.Panels(stage, self.submit_command, lambda: tabs.select(self.log_page))
+        self.panels.left.grid(row=0, column=0, sticky="ns", padx=(0,8))
+        self.panels.right.grid(row=0, column=2, sticky="ns", padx=(8,0))
+        body = tk.Frame(stage, bg=ui.PANEL, highlightthickness=1, highlightbackground=ui.EDGE)
+        body.grid(row=0, column=1, sticky="nsew")
+        def fit(event):
+            if event.widget is not stage:
+                return
+            for panel, limit in ((self.panels.right, 1020), (self.panels.left, 820)):
+                if event.width >= limit:
+                    panel.grid()
+                else:
+                    panel.grid_remove()
+        stage.bind("<Configure>", fit)
+        self.compact_core = cockpit.Reactor(body, self.status, compact=True)
         self.journal = scrolledtext.ScrolledText(
             body, wrap="word", font=("Segoe UI", 12), bg=ui.PANEL, fg=ui.INK,
             relief="flat", padx=22, pady=14, height=3, state="disabled",
@@ -224,23 +264,23 @@ class VaryaWindow:
         self.drafting = False
         self.timer_cards = {}
         self.suggestions = tk.Frame(body, bg=ui.PANEL)
-        self.suggestions.place(relx=.5, rely=.5, anchor="center")
-        art = tk.Canvas(self.suggestions, width=220, height=74,
-                        bg=ui.PANEL, highlightthickness=0)
-        art.pack()
-        ui.wave(art, 110, 38)
-        tk.Label(self.suggestions, text="С чего начнём?", bg=ui.PANEL, fg=ui.INK,
-                 font=("Segoe UI Semibold", 22)).pack(pady=(0, 12))
+        self.suggestions.place(x=1, y=1, relwidth=1, relheight=1)
+        self.reactor = cockpit.Reactor(self.suggestions, self.status)
+        self.reactor.pack(fill="both", expand=True, pady=(5,0))
+        tk.Label(self.suggestions, text="Чем займёмся?", bg=ui.PANEL, fg=ui.INK,
+                 font=("Segoe UI Semibold", 19)).pack()
+        tk.Label(self.suggestions, text="Скажи «Джарвис» или напиши задачу", bg=ui.PANEL,
+                 fg=ui.MUTED, font=("Segoe UI", 10)).pack(pady=(1,9))
         row = tk.Frame(self.suggestions, bg=ui.PANEL)
-        row.pack()
+        row.pack(pady=(0,12))
         for title, prompt in (("Таймер для чая", "можешь поставить таймер для чая?"),
-                              ("Записать заметку", "запиши заметку"),
-                              ("Управлять окном", "покажи кнопки")):
+                              ("Проверить ПК", "проверь компьютер")):
             ttk.Button(row, text=title, command=lambda p=prompt:
-                       self.submit_command(p)).pack(side="left", padx=4)
+                       self.submit_command(p)).pack(side="left", padx=3)
         self.command_text = tk.StringVar()
         self.entry = ttk.Entry(entry_row, textvariable=self.command_text, font=("Segoe UI", 12))
         self.entry.pack(side="left", fill="x", expand=True, ipady=5, padx=(0, 8))
+        self.entry.bind("<Control-KeyPress>", entry_shortcut)
         self.entry.bind("<Return>", lambda event: self.submit_command())
         self.send_button = ttk.Button(entry_row, text="Отправить", style="Accent.TButton", command=self.submit_command)
         self.send_button.pack(side="right")
@@ -249,6 +289,8 @@ class VaryaWindow:
         self.stop_button = ttk.Button(controls, text="Остановить", command=self.stop,
                                       state="disabled")
         self.stop_button.pack(side="left")
+        self.tray_button = ttk.Button(controls, text="В трей", command=self.hide)
+        self.tray_button.pack(side="right")
         self.quick = ttk.Frame(frame)
         self.entry_row = entry_row
         self.quick_deadline = 0.0
@@ -257,6 +299,33 @@ class VaryaWindow:
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(100, self.poll)
         self.tick()
+
+    def refresh_log(self):
+        try:
+            rows = workspace_tasks.history()
+        except (OSError, workspace_tasks.sqlite3.Error):
+            rows = []
+        self.log_view.configure(state="normal")
+        self.log_view.delete("1.0", "end")
+        for stamp, kind, detail in rows:
+            self.log_view.insert("end", f"{stamp}    {kind}\n{detail}\n\n")
+        if not rows:
+            self.log_view.insert("end", "Здесь появятся выполненные задачи и ответы Вари.")
+        self.log_view.configure(state="disabled")
+
+    def hide(self):
+        if self.tray and self.tray.ready:
+            self.controller.background.set()
+            self.root.withdraw()
+        else:
+            self.status.set("Значок в трее пока недоступен")
+
+    def restore(self):
+        self.controller.background.clear()
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+        self.entry.focus_set()
 
     def make_settings(self, tabs: ttk.Notebook) -> None:
         """Добавить сохраняемые настройки голоса и обращения по имени."""
@@ -272,6 +341,32 @@ class VaryaWindow:
         panel.bind("<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
         options = settings.snapshot()
+        ttk.Label(panel, text="Управление", style="Title.TLabel").pack(anchor="w")
+        self.mode_var = tk.StringVar(value=options.get("mode", "Помощник"))
+        ttk.Combobox(panel, textvariable=self.mode_var, state="readonly",
+                     values=missions.MODES, width=24).pack(anchor="w", pady=5)
+        ttk.Label(panel, text="Наблюдатель читает состояние ПК. Помощник согласует рабочий сценарий. "
+                  "Автономный открывает рабочие программы по одной просьбе. Расширенный также создаёт проекты.",
+                  wraplength=580).pack(anchor="w", pady=5)
+        ttk.Label(panel, text="Программы для начала работы").pack(anchor="w", pady=(8,2))
+        apps_row = ttk.Frame(panel)
+        apps_row.pack(anchor="w")
+        self.work_vars = {}
+        for name in config.APP_WHITELIST:
+            var = tk.BooleanVar(value=name in options.get("work_apps", ["блокнот"]))
+            self.work_vars[name] = var
+            ttk.Checkbutton(apps_row, text=name, variable=var).pack(side="left")
+        self.project_var = tk.StringVar(value=options.get("project", ""))
+        project_row = ttk.Frame(panel)
+        project_row.pack(fill="x", pady=6)
+        def choose_project():
+            selected = filedialog.askdirectory(parent=self.root, title="Папка проекта Python")
+            if selected:
+                self.project_var.set(selected)
+        ttk.Button(project_row, text="Папка проекта…", command=choose_project).pack(side="left")
+        ttk.Button(project_row, text="Забыть папку", command=lambda:self.project_var.set("")).pack(side="right")
+        ttk.Label(panel, textvariable=self.project_var, wraplength=580).pack(anchor="w")
+        ttk.Button(panel, text="Сохранить профиль", command=self.save_settings).pack(anchor="w", pady=(4,14))
         ttk.Label(panel, text="Голос Вари", style="Title.TLabel").pack(
             anchor="w", pady=(0, 18),
         )
@@ -309,7 +404,7 @@ class VaryaWindow:
                         variable=self.installed).pack(anchor="w", pady=3)
         self.wake_word = tk.BooleanVar(value=options["wake_word"])
         ttk.Checkbutton(
-            panel, text="Выполнять команды только со слова «Варя»",
+            panel, text="Выполнять команды с обращения «Варя» или «Джарвис»",
             variable=self.wake_word,
         ).pack(anchor="w", pady=14)
         ttk.Label(
@@ -329,7 +424,11 @@ class VaryaWindow:
     def save_settings(self) -> bool:
         """Проверить поля и сохранить без прямых вызовов аудио из Tk."""
         try:
+            if self.busy and self.mode_var.get() != missions.mode():
+                self.stop()
             settings.save({
+                "mode": self.mode_var.get(), "project": self.project_var.get(),
+                "work_apps": [name for name, var in self.work_vars.items() if var.get()],
                 "voice": self.voice.get(), "rate": self.rate.get(),
                 "volume": self.volume.get(), "wake_word": self.wake_word.get(),
                 "installed_apps": self.installed.get(), "sapi_voice": self.voice_ids[self.local_voice.get()],
@@ -406,6 +505,9 @@ class VaryaWindow:
     def close(self) -> None:
         """Закрыть окно после безопасного завершения рабочего потока."""
         self.closing = True
+        self.panels.closed.set()
+        if self.tray:
+            self.tray.close()
         self.start_button.configure(state="disabled")
         self.stop()
         self.controller.close()
@@ -414,6 +516,7 @@ class VaryaWindow:
         """Обновлять отсчёт и показывать сигнал даже при занятом микрофоне."""
         if self.closing:
             return
+        self.panels.refresh()
         names = features.expired_names()
         if names:
             message = "Время вышло. " + ", ".join(names) + "."
@@ -432,7 +535,8 @@ class VaryaWindow:
         view = self.journal
         frame = tk.Frame(view, bg=ui.FIELD, padx=15, pady=10, highlightthickness=1,
                          highlightbackground=ui.EDGE)
-        title = {"timer_card": "ТАЙМЕР", "note_card": "ЗАМЕТКА", "screenshot_card": "СНИМОК ЭКРАНА"}[kind]
+        title = {"timer_card": "ТАЙМЕР", "note_card": "ЗАМЕТКА", "screenshot_card": "СНИМОК ЭКРАНА",
+                 "artifact_card": "РЕЗУЛЬТАТ ЗАДАЧИ"}[kind]
         tk.Label(frame, text=title, bg=ui.FIELD, fg=ui.ACCENT,
                  font=("Segoe UI Semibold", 9)).pack(anchor="w")
         if kind == "timer_card":
@@ -444,6 +548,17 @@ class VaryaWindow:
             count.pack(side="left", padx=16)
             ttk.Button(row, text="Отменить", command=lambda: self.cancel_card(value)).pack(side="left")
             self.timer_cards[value] = (frame, count)
+        elif kind == "artifact_card":
+            path = Path(value)
+            tk.Label(frame, text=path.name, bg=ui.FIELD, fg=ui.INK).pack(anchor="w")
+            def open_result():
+                try:
+                    dest = path.resolve(strict=True)
+                    if dest.suffix.lower() in {".html", ".txt", ".zip"} and dest.is_relative_to(settings.DATA_DIR.resolve()):
+                        os.startfile(dest)
+                except OSError:
+                    self.append_turn("assistant", "Файл результата уже недоступен.")
+            ttk.Button(frame, text="Открыть результат", command=open_result).pack(anchor="w", pady=4)
         elif kind == "note_card":
             tk.Label(frame, text=value, wraplength=370, justify="left", bg=ui.FIELD,
                      fg=ui.INK, font=("Segoe UI", 11)).pack(anchor="w")
@@ -501,6 +616,8 @@ class VaryaWindow:
         if role == "user":
             self.clear_choices()
             self.suggestions.place_forget()
+            if not self.compact_core.winfo_manager():
+                self.compact_core.pack(side="top", fill="x", before=self.journal.frame)
         view = self.journal
         view.configure(state="normal")
         if self.drafting and role != "delta":
@@ -527,9 +644,23 @@ class VaryaWindow:
                 kind, text = self.events.get_nowait()
                 if kind in {"user", "assistant", "delta", "end_draft"}:
                     self.append_turn(kind, text)
+                elif kind == "private_text":
+                    self.append_turn("assistant", text)
+                elif kind == "level":
+                    self.reactor.level = self.compact_core.level = float(text)
+                elif kind == "mission":
+                    self.panels.last.config(text=text[:130])
+                    self.status.set(text[:48])
+                    if self.log_page.winfo_ismapped():
+                        self.refresh_log()
+                elif kind in {"restore", "wake"}:
+                    if kind == "restore" or self.root.state() == "withdrawn":
+                        self.restore()
+                elif kind == "tray_status":
+                    self.status.set(text)
                 elif kind == "choices":
                     self.show_choices(*text)
-                elif kind in {"note_card", "timer_card", "screenshot_card"}:
+                elif kind in {"note_card", "timer_card", "screenshot_card", "artifact_card"}:
                     self.card(kind, text)
                 elif kind == "mic_paused" and not self.closing:
                     self.listening = False
@@ -577,7 +708,8 @@ def run() -> None:
         messagebox.showerror("Варя", f"Не удалось открыть журнал: {error}")
         root.destroy()
         return
-    VaryaWindow(root)
+    window = VaryaWindow(root)
+    window.tray = Tray(window.events)
     root.deiconify()
     root.mainloop()
 

@@ -9,9 +9,10 @@ a = Analysis(
     ['gui.py'],
     pathex=[],
     binaries=[],
-    datas=collect_data_files('speech_recognition'),
+    datas=collect_data_files('speech_recognition') + [('templates/*.html', 'templates')],
     hiddenimports=(
         collect_submodules('pyttsx3.drivers')
+        + collect_submodules('winrt')
         + ['comtypes.client', 'comtypes.stream', 'PIL.ImageGrab', uia.__name__,
            uia.CUIAutomation.__module__]
     ),
