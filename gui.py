@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from queue import Empty, Queue
 import threading
+import time
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
@@ -77,6 +78,8 @@ class AssistantController:
 
         token = speech.transcript.set(publish)
         dialogue = Dialogue()
+        choice_version = 0
+        choice_deadline = 0.0
         listening = False
         try:
             while not self.closing.is_set():
@@ -91,6 +94,7 @@ class AssistantController:
                 if kind == "close":
                     break
                 if kind == "stop":
+                    choice_version += 1
                     listening = False
                     dialogue = Dialogue()
                     self.events.put(("stopped", "Микрофон выключен"))
@@ -106,15 +110,35 @@ class AssistantController:
                     listening = True
                     continue
                 try:
+                    if kind == "choice":
+                        version, text = text
+                        kind = "typed"
+                        if version != choice_version or time.monotonic() >= choice_deadline:
+                            self.events.put(("assistant", "Этот вопрос уже закрыт. Повтори просьбу."))
+                            continue
                     if kind == "voice":
                         text = speech.listen()
                     if text and not speech.is_cancelled():
+                        choice_version += 1
                         self.events.put(("state", "Обрабатываю сообщение…"))
                         if kind == "typed":
                             logger.info("Введено: %s", text)
                         if not main.route_command(text, dialogue=dialogue, typed=kind == "typed"):
                             self.events.put(("exit", ""))
                             break
+                        if dialogue.proposal:
+                            choice_deadline = dialogue.proposal.expires
+                            choices = ("Да", "Нет")
+                        elif dialogue.pending == "кнопки выбранного окна":
+                            choice_deadline = dialogue.until
+                            choices = tuple(str(i + 1) for i in range(len(dialogue.window_choices)))
+                        elif dialogue.pending == "duration":
+                            choice_deadline = dialogue.until
+                            choices = ("На пять минут", "На четверть часа", "На полчаса")
+                        else:
+                            choices = ()
+                        if choices and not speech.is_cancelled():
+                            self.events.put(("choices", (choice_version, choice_deadline, choices)))
                 except Exception:
                     logger.exception("Ошибка обработки сообщения")
                     self.events.put(("assistant", "Не получилось обработать сообщение. Попробуй ещё раз."))
@@ -209,9 +233,9 @@ class VaryaWindow:
                  font=("Segoe UI Semibold", 22)).pack(pady=(0, 12))
         row = tk.Frame(self.suggestions, bg=ui.PANEL)
         row.pack()
-        for title, prompt in (("Поставить таймер", "поставь таймер"),
+        for title, prompt in (("Таймер для чая", "можешь поставить таймер для чая?"),
                               ("Записать заметку", "запиши заметку"),
-                              ("Поиск", "найди в интернете")):
+                              ("Управлять окном", "покажи кнопки")):
             ttk.Button(row, text=title, command=lambda p=prompt:
                        self.submit_command(p)).pack(side="left", padx=4)
         self.command_text = tk.StringVar()
@@ -225,6 +249,9 @@ class VaryaWindow:
         self.stop_button = ttk.Button(controls, text="Остановить", command=self.stop,
                                       state="disabled")
         self.stop_button.pack(side="left")
+        self.quick = ttk.Frame(frame)
+        self.entry_row = entry_row
+        self.quick_deadline = 0.0
         self.entry.focus_set()
         root.bind("<Escape>", lambda _: self.stop() if self.busy and not self.stopping else None)
         root.protocol("WM_DELETE_WINDOW", self.close)
@@ -313,7 +340,7 @@ class VaryaWindow:
         logger.info("Настройки сохранены")
         return True
 
-    def submit_command(self, suggestion: str | None = None) -> None:
+    def submit_command(self, suggestion: str | None = None, *, version: int | None = None) -> None:
         """Поставить одно сообщение в очередь, сохранив текущую голосовую сессию."""
         text = suggestion or self.command_text.get().strip()
         if not text or self.closing or self.stopping or self.sending:
@@ -324,10 +351,31 @@ class VaryaWindow:
         self.send_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.status.set("Сообщение в очереди…")
-        self.controller.commands.put(("typed", text))
+        self.clear_choices()
+        item = ("typed", text) if version is None else ("choice", (version, text))
+        self.controller.commands.put(item)
         if suggestion is None:
             self.command_text.set("")
         self.entry.focus_set()
+
+    def clear_choices(self) -> None:
+        """Убрать ответы на завершённый вопрос."""
+        self.quick_deadline = 0.0
+        self.quick.pack_forget()
+        for button in self.quick.winfo_children():
+            button.destroy()
+
+    def show_choices(self, version: int, deadline: float, choices: tuple[str, ...]) -> None:
+        """Предложить короткие ответы именно на текущий вопрос Вари."""
+        self.clear_choices()
+        if self.stopping or time.monotonic() >= deadline:
+            return
+        self.quick_deadline = deadline
+        self.quick.pack(side="bottom", fill="x", after=self.entry_row, pady=(4, 0))
+        for choice in choices:
+            ttk.Button(self.quick, text=choice, width=3 if choice.isdigit() else 0,
+                       command=lambda value=choice:
+                       self.submit_command(value, version=version)).pack(side="left", padx=2)
 
     def preview_voice(self) -> None:
         """Озвучить образец в том же рабочем потоке, что и ответы."""
@@ -350,6 +398,7 @@ class VaryaWindow:
         """Остановить сессию и отбросить ещё не выполненную реплику."""
         self.stopping = True
         self.send_button.configure(state="disabled")
+        self.clear_choices()
         self.controller.stop()
         self.stop_button.configure(state="disabled")
         self.status.set("Останавливаюсь… ожидаю запись или сеть")
@@ -372,6 +421,8 @@ class VaryaWindow:
             self.controller.alarms.put(message)
             self.organizer.feedback.set(message)
         self.refresh_cards()
+        if self.quick_deadline and time.monotonic() >= self.quick_deadline:
+            self.clear_choices()
         if self.organizer.winfo_ismapped():
             self.organizer.refresh()
         self.root.after(250, self.tick)
@@ -448,6 +499,7 @@ class VaryaWindow:
     def append_turn(self, role: str, text: str) -> None:
         """Показать текст модели по мере генерации и заменить черновик полным ответом."""
         if role == "user":
+            self.clear_choices()
             self.suggestions.place_forget()
         view = self.journal
         view.configure(state="normal")
@@ -475,6 +527,8 @@ class VaryaWindow:
                 kind, text = self.events.get_nowait()
                 if kind in {"user", "assistant", "delta", "end_draft"}:
                     self.append_turn(kind, text)
+                elif kind == "choices":
+                    self.show_choices(*text)
                 elif kind in {"note_card", "timer_card", "screenshot_card"}:
                     self.card(kind, text)
                 elif kind == "mic_paused" and not self.closing:

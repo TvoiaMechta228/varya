@@ -3,6 +3,12 @@
 from dataclasses import dataclass
 import re
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from requests_pc import Proposal
+    from window_buttons import Button
+
 
 import features
 from safety import normalize_text
@@ -50,6 +56,9 @@ class Dialogue:
     selected_window: tuple[int, int, str] | None = None
     window_choices: tuple[tuple[int, int, str], ...] = ()
     choice_verb: str = ""
+    proposal: "Proposal | None" = None
+    button_target: tuple[int, int, str] | None = None
+    buttons: tuple["Button", ...] = ()
     last_request: str = ""
     last_result: str = ""
 

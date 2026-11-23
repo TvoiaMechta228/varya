@@ -1,6 +1,10 @@
 # Сборка одного EXE без консоли; динамический драйвер SAPI5 включён явно.
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+from comtypes.client import GetModule
+
+uia = GetModule("UIAutomationCore.dll")
+
 a = Analysis(
     ['gui.py'],
     pathex=[],
@@ -8,7 +12,8 @@ a = Analysis(
     datas=collect_data_files('speech_recognition'),
     hiddenimports=(
         collect_submodules('pyttsx3.drivers')
-        + ['comtypes.client', 'comtypes.stream', 'PIL.ImageGrab']
+        + ['comtypes.client', 'comtypes.stream', 'PIL.ImageGrab', uia.__name__,
+           uia.CUIAutomation.__module__]
     ),
     hookspath=[],
     hooksconfig={},

@@ -14,6 +14,7 @@ import conversation
 import desktop
 from dialogue import Dialogue
 import command_results
+import requests_pc
 import features
 import settings
 from safety import normalize_text
@@ -59,8 +60,9 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             return True
     elif (not typed and settings.snapshot()["wake_word"]
           and normalize_text(text) not in {"стоп", "выход", "пока"}):
-        if not (dialogue and dialogue.pending in {"duration", "запомни", "найди в интернете"}
-                and heard_at < dialogue.until):
+        if not (dialogue and ((dialogue.pending and heard_at < dialogue.until)
+                              or (dialogue.proposal and heard_at < dialogue.proposal.expires
+                                  and normalize_text(text) in requests_pc.REPLIES))):
             return True
     original = text
     speech.publish("user", text)
@@ -70,6 +72,15 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             speech.speak("До свидания!")
             return False
         session = dialogue if dialogue is not None else Dialogue()
+        if speech.is_cancelled():
+            return True
+        confirmed = requests_pc.confirmation(session, command)
+        if confirmed is not None:
+            if confirmed.card:
+                speech.publish(confirmed.card, confirmed.value)
+            session.last_request, session.last_result = original, confirmed.text
+            speech.speak(confirmed.text)
+            return True
         text, question = session.prepare(text, now=heard_at)
         if question:
             speech.speak(question)
@@ -83,15 +94,22 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             session.last_result = message
             speech.speak(message)
 
-        result = command_results.execute(session, command, text)
-        if result:
+        def present(result: command_results.Result) -> None:
             if result.card:
                 speech.publish(result.card, result.value)
-            answer(result.text)
+            if result.text and not speech.is_cancelled():
+                answer(result.text)
+
+        result = command_results.execute(session, command, text)
+        if result is None:
+            result = requests_pc.direct(session, command, text)
+        if result:
+            present(result)
             return True
         if command in {"забудь разговор", "режим команд", "закончи разговор"}:
             session.last_request = session.last_result = session.selected_timer = session.selected_note = ""
-            session.selected_window = None
+            session.selected_window = session.button_target = None
+            session.buttons = ()
         if conversation.control(command):
             return True
         response = desktop.execute(command, text)
@@ -113,9 +131,16 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             app = command.removeprefix("открой ")
             if actions.open_app(app):
                 answer(f"Открываю {app}.")
+            elif settings.snapshot().get("installed_apps") and actions.open_installed(app):
+                answer(f"Открываю {app}.")
+            elif dialogue is not None and conversation.enabled and len(app.split()) > 2:
+                proposal = requests_pc.understand(session, original)
+                if proposal is not None:
+                    present(proposal)
+                else:
+                    answer("Какую программу или папку открыть?")
             elif settings.snapshot().get("installed_apps"):
-                answer(f"Открываю {app}." if actions.open_installed(app)
-                       else "Назови точное имя приложения в меню Пуск.")
+                answer("Назови точное имя приложения в меню Пуск.")
             else:
                 answer("Этой программы нет в белом списке.")
         elif command in {"который час", "сколько времени"}:
@@ -130,7 +155,11 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             actions.cancel_shutdown()
             speech.speak("Запланированное выключение отменено.")
         elif conversation.enabled:
-            conversation.reply(original, context=(session.last_request, session.last_result))
+            result = requests_pc.understand(session, original) if dialogue is not None else None
+            if result is None:
+                conversation.reply(original, context=(session.last_request, session.last_result))
+            else:
+                present(result)
         else:
             speech.speak("Команда не распознана.")
     except (OSError, subprocess.SubprocessError, ValueError):

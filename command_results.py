@@ -41,7 +41,7 @@ def timer_reference(session: Dialogue, verb: str, name: str = "") -> Result:
         session.selected_timer = ""
         return Result(f"Таймер «{target}» отменён.")
     seconds = live[target]
-    return Result(f"«{target}» — осталось {seconds // 60} мин {seconds % 60} сек.")
+    return Result(f"«{target}» — осталось {features.duration_words(seconds)}.")
 
 
 def window_action(session: Dialogue, verb: str, name: str) -> Result:
@@ -72,7 +72,7 @@ def apply_window(session: Dialogue, verb: str, target: tuple[int, int, str]) -> 
 
 def execute(session: Dialogue, command: str, raw: str) -> Result | None:
     """Выполнить одну распознанную просьбу и вернуть результат после действия."""
-    if re.match(r"^(?:не |не надо |не нужно )", command):
+    if re.match(r"^не (?:надо|нужно|открывай|запускай|закрывай|выключай|ставь|записывай|делай|нажимай|сохраняй|ищи|отменяй)\b", command):
         return Result("Хорошо, ничего не выполняю.")
     if match := re.fullmatch(r"как (?:мне )?(?:открыть|запустить) (.+)", command):
         return Result(f"Скажи «открой {match[1]}» или введи название в меню «Пуск».")

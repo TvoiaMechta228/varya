@@ -18,6 +18,7 @@ _timers: list[tuple[str, float]] = []
 _timer_lock = RLock()
 _note_lock = RLock()
 HELP = (
+    "Покажи загрузки • открой настройки экрана • покажи кнопки в окне Калькулятор\n"
     "Давай поговорим • забудь разговор • режим команд\n"
     "Список окон • переключись на окно Блокнот • закрой окно Блокнот\n"
     "Открой документы • создай папку Планы • запусти приложение Paint\n"
@@ -39,6 +40,8 @@ HELP = (
 
 def duration(text: str) -> int | None:
     """Разобрать длительность 1–86400 секунд с русскими числительными."""
+    if text.strip() == "четверть часа":
+        return 900
     if text.strip() in {"полчаса", "пол часа", "половину часа"}:
         return 1800
     match = re.fullmatch(
@@ -73,6 +76,21 @@ def duration(text: str) -> int | None:
     )
     seconds = value * multiplier
     return seconds if 1 <= seconds <= 86400 else None
+
+
+def duration_words(seconds: int) -> str:
+    """Прочитать остаток времени с правильными русскими окончаниями."""
+    hours, rest = divmod(seconds, 3600)
+    minutes, rest = divmod(rest, 60)
+    parts = []
+    for count, forms in ((hours, ("час", "часа", "часов")),
+                         (minutes, ("минута", "минуты", "минут")),
+                         (rest, ("секунда", "секунды", "секунд"))):
+        if count:
+            last = count % 10 if count % 100 not in range(11, 15) else 0
+            word = forms[0] if last == 1 else forms[1] if 2 <= last <= 4 else forms[2]
+            parts.append(f"{count} {word}")
+    return " ".join(parts) or "0 секунд"
 
 
 def due_timers() -> int:
@@ -211,7 +229,7 @@ def handle(command: str, raw: str) -> bool:
                      else "Такого таймера нет.")
     elif command == "мои таймеры":
         active = remaining()
-        speech.speak(". ".join(f"{name}, осталось {sec} секунд"
+        speech.speak(". ".join(f"{name}, осталось {duration_words(sec)}"
                                for name, sec in active)
                      if active else "Активных таймеров нет.")
     elif command == "отмени таймеры":
@@ -222,7 +240,7 @@ def handle(command: str, raw: str) -> bool:
         active = remaining()
         if active:
             _, seconds = active[0]
-            speech.speak(f"До ближайшего таймера {seconds} секунд.")
+            speech.speak(f"До ближайшего таймера {duration_words(seconds)}.")
         else:
             speech.speak("Активных таймеров нет.")
     elif command == "мои заметки":

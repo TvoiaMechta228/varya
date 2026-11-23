@@ -32,7 +32,7 @@ def test_tea_conversation(session, monkeypatch, mute_speech):
     assert features.remaining() == [("Чай", 1800)]
     clock.return_value += 65
     main.route_command("Сколько по нему осталось?", dialogue=session)
-    assert "28 мин 55 сек" in mute_speech.call_args.args[0]
+    assert "28 минут 55 секунд" in mute_speech.call_args.args[0]
     main.route_command("Отмени его", dialogue=session)
     assert not features.remaining()
 
