@@ -22,6 +22,26 @@ _pending: Future | None = None
 _runtime = None
 _context = None
 _page = None
+OPERATION_TIMEOUT = 30.0
+
+
+def page_problem(url: str, title: str, body: str) -> str | None:
+    """Распознать ограничения сайта и предложить понятный следующий шаг."""
+    host = (urlsplit(url).hostname or "").lower()
+    content = (title + "\n" + body).casefold()
+    if host in {"ya.ru", "yandex.ru"} or host.endswith((".ya.ru", ".yandex.ru")):
+        if (
+            "/showcaptcha" in url
+            or "подтвердите, что запросы" in content
+            or "вы не робот" in content
+        ):
+            return "Яндекс просит подтвердить, что ты не робот. Пройди проверку в открытой вкладке. Обычный поиск можно открыть командой «найди в Яндексе …» в твоём Яндекс Браузере."
+        if (
+            "недоступна в вашем регионе" in content
+            or "недоступен в вашем регионе" in content
+        ):
+            return "Яндекс сообщает, что сервис недоступен в текущем регионе подключения. Варя не может изменить ограничение сайта. Можно воспроизвести локальную музыку."
+    return None
 
 
 def valid_url(value: str) -> str:
@@ -82,7 +102,21 @@ async def _execute(operation: Callable[[], Coroutine], force: bool) -> Any:
         try:
             if not force and speech.is_cancelled():
                 raise InterruptedError
-            return await operation()
+            return (
+                await operation()
+                if force
+                else await asyncio.wait_for(operation(), OPERATION_TIMEOUT)
+            )
+        except TimeoutError as error:
+            if _page is not None:
+                try:
+                    await asyncio.wait_for(_page.close(), timeout=2)
+                except Exception:
+                    pass
+                _page = None
+            raise OSError(
+                "Сайт не ответил вовремя. Повтори просьбу или открой Яндекс в обычном браузере."
+            ) from error
         except asyncio.CancelledError:
             # Закрытие активной вкладки останавливает навигацию в самом Chromium.
             # Остальные вкладки и профиль сохраняются.
@@ -109,6 +143,8 @@ def _run(operation: Callable[[], Coroutine], *, force: bool = False) -> Any:
             try:
                 return future.result(timeout=0.1)
             except FutureTimeout:
+                if future.done():
+                    return future.result()
                 continue
             except CancelledError:
                 raise InterruptedError("Действие браузера остановлено") from None
@@ -211,19 +247,70 @@ def target(kind: str, name: str) -> None:
     _run(operation)
 
 
-def open_url(value: str) -> str:
+def open_url(value: str, *, reuse: bool = True) -> str:
     """Открыть новую вкладку и проверить фактический адрес и HTTP-ответ."""
     url = valid_url(value)
 
     async def operation():
         global _page
         owner = await _owner()
-        _page = await owner.new_page()
-        response = await _page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        wanted = urlsplit(url)
+        # Повторные запросы поиска/сервиса используют одну вкладку того же сайта.
+        is_search = (
+            wanted.hostname in {"ya.ru", "yandex.ru"}
+            and wanted.path.rstrip("/") == "/search"
+        )
+        existing = (
+            next(
+                (
+                    p
+                    for p in owner.pages
+                    if p.url == url
+                    or (
+                        is_search
+                        and urlsplit(p.url).netloc == wanted.netloc
+                        and urlsplit(p.url).path.rstrip("/") == "/search"
+                    )
+                ),
+                None,
+            )
+            if reuse
+            else None
+        )
+        _page = (
+            existing
+            or next((p for p in owner.pages if p.url == "about:blank"), None)
+            or await owner.new_page()
+        )
+        if existing and existing.url == url:
+            await _page.bring_to_front()
+        else:
+            response = await _page.goto(url, wait_until="commit", timeout=15000)
+            if response is not None and response.status >= 400:
+                raise OSError(f"Сайт вернул HTTP {response.status}. Адрес {_page.url}")
+            try:
+                await _page.wait_for_load_state("domcontentloaded", timeout=1500)
+            except asyncio.TimeoutError:
+                pass
+            except Exception as error:
+                from playwright.async_api import TimeoutError as BrowserTimeout
+
+                if not isinstance(error, BrowserTimeout):
+                    raise
         await _page.bring_to_front()
-        if response is not None and response.status >= 400:
-            raise OSError(f"Сайт вернул HTTP {response.status}. Адрес {_page.url}")
-        return f"Открыта страница «{await _page.title()}». Адрес {_page.url}"
+        title = await _page.title()
+        try:
+            body = await _page.locator("body").inner_text(timeout=1500)
+        except Exception as error:
+            from playwright.async_api import TimeoutError as BrowserTimeout
+
+            if not isinstance(error, BrowserTimeout):
+                raise
+            body = ""
+        problem = page_problem(_page.url, title, body[:4000])
+        if problem:
+            return problem
+        return f"Открыта страница «{title or wanted.hostname}». Адрес {_page.url}"
 
     return _run(operation)
 

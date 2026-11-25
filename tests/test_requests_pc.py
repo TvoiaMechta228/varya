@@ -132,7 +132,7 @@ def test_numbered_selection_checks_live_button_and_window(monkeypatch):
 
 def test_quick_reply_expires_and_preserves_keyboard(monkeypatch, tk_root):
     import tkinter as tk
-    import gui
+    from legacy import gui
 
     monkeypatch.setattr(gui, "AssistantController", Mock())
     monkeypatch.setattr(conversation, "enabled", False)

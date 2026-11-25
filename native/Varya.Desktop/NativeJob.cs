@@ -32,7 +32,9 @@ internal sealed class NativeJob : IDisposable
     public NativeJob(Process process)
     {
         handle = CreateJobObject(IntPtr.Zero, null);
-        var limits = new ExtendedLimits { Basic = new BasicLimits { Flags = 0x2000 } };
+        // Обычный пользовательский браузер запускается отдельно с CREATE_BREAKAWAY_FROM_JOB.
+        // Движок, модель и управляемый Chromium по умолчанию остаются в задании.
+        var limits = new ExtendedLimits { Basic = new BasicLimits { Flags = 0x2000 | 0x800 } };
         if (handle == IntPtr.Zero || !SetInformationJobObject(handle, 9, ref limits, (uint)Marshal.SizeOf<ExtendedLimits>())
             || !AssignProcessToJobObject(handle, process.Handle))
         {

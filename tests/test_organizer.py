@@ -6,7 +6,7 @@ from tkinter import ttk
 import features
 import main
 import settings
-from organizer import Organizer
+from legacy.organizer import Organizer
 
 
 def test_organizer_and_voice_share_state(tmp_path, monkeypatch, tk_root):

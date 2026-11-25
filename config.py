@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 ASSISTANT_NAME = "Варя"
+ASSISTANT_VERSION = "2.1.1"
 LANGUAGE = "ru-RU"
 LISTEN_TIMEOUT = 5.0
 PHRASE_TIME_LIMIT = 8.0
@@ -37,6 +38,7 @@ WEB_SHORTCUTS = {
     "яндекс": BROWSER_URL,
 }
 APP_ALIASES = {"интернет": "браузер", "браузера": "браузер",
+               "яндекс браузер": "браузер", "яндекс-браузер": "браузер",
                "нотпад": "блокнот", "пэйнт": "paint", "паинт": "paint"}
 # Windows 11 может предоставлять Paint через App Execution Alias.
 PAINT_EXE = WINDOWS_DIR / "System32" / "mspaint.exe"

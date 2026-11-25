@@ -22,7 +22,13 @@ def test_browser_fields_confirmation_and_navigation(monkeypatch):
         def do_GET(self):
             if self.path == "/slow":
                 threading.Event().wait(8)
+            if self.path == "/stall.js":
+                threading.Event().wait(6)
             data = b'<html><head><title>Varya test</title></head><body><h1>Fixture</h1><label for="name">Name</label><input id="name"><button onclick="document.querySelector(\'h1\').textContent=\'Clicked\'">Apply</button></body></html>'
+            if self.path == "/progress":
+                data = b'<html><title>Progressive page</title><body><h1>Already visible</h1><script src="/stall.js"></script></body></html>'
+            elif self.path == "/stall.js":
+                data = b""
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
@@ -77,6 +83,15 @@ def test_browser_fields_confirmation_and_navigation(monkeypatch):
         assert "Varya test" in browser_tools.open_url(
             f"http://127.0.0.1:{server.server_port}/"
         )
+        count = len(browser_tools.tabs().splitlines())
+        browser_tools.open_url(f"http://127.0.0.1:{server.server_port}/")
+        assert len(browser_tools.tabs().splitlines()) == count
+        started = time.monotonic()
+        assert "Progressive page" in browser_tools.open_url(
+            f"http://127.0.0.1:{server.server_port}/progress"
+        )
+        assert time.monotonic() - started < 4
+        assert "Already visible" in browser_tools.text()
         browser_tools._run(lambda: browser_tools._context.close())
         assert "Varya test" in browser_tools.open_url(
             f"http://127.0.0.1:{server.server_port}/"
@@ -85,3 +100,20 @@ def test_browser_fields_confirmation_and_navigation(monkeypatch):
         browser_tools.close()
         server.shutdown()
         server.server_close()
+
+
+def test_browser_operation_has_a_deadline(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(browser_tools, "OPERATION_TIMEOUT", 0.05)
+
+    async def stalled():
+        await asyncio.sleep(10)
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(OSError, match="не ответил вовремя"):
+            browser_tools._run(stalled)
+        assert time.monotonic() - started < 2
+    finally:
+        browser_tools.close()

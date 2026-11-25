@@ -3,16 +3,29 @@ $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     $pythonExe = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-    $outputRoot = Join-Path $PSScriptRoot 'dist\Varya-2.1.0'
-    $installerRoot = Join-Path $PSScriptRoot 'dist\installer-2.1.0'
-    if (Test-Path -LiteralPath $outputRoot) { $outputRoot += '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) }
-    if (Test-Path -LiteralPath $installerRoot) { $installerRoot += '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) }
+    $distRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
+    $outputRoot = Join-Path $distRoot 'Varya'
+    $installerRoot = Join-Path $distRoot 'installer'
     & $pythonExe prepare_models.py
     if ($LASTEXITCODE -ne 0) { throw 'Модели не подготовлены' }
     & $pythonExe -m pytest -q
     if ($LASTEXITCODE -ne 0) { throw 'Тесты не прошли' }
     & dotnet run --project native/Varya.UpdateChecks -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Проверки обновлений не прошли' }
+    & dotnet run --project native/Varya.UpdateChecks -c Release -- --jobs
+    if ($LASTEXITCODE -ne 0) { throw 'Проверка жизненного цикла процессов не прошла' }
+    foreach ($targetPath in @($outputRoot, $installerRoot)) {
+        if ((Split-Path ([IO.Path]::GetFullPath($targetPath))) -ne $distRoot) { throw 'Недопустимый путь сборки' }
+        $inUse = Get-CimInstance Win32_Process | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath.StartsWith($targetPath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+        }
+        if ($inUse) { throw "Папка используется запущенным приложением: $targetPath" }
+        if (Test-Path -LiteralPath $targetPath) {
+            if ((Get-Item -LiteralPath $targetPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Выходная папка является ссылкой' }
+            if (Get-ChildItem -LiteralPath $targetPath -Recurse -Force -Attributes ReparsePoint) { throw 'В выходной папке найдены ссылки' }
+            Remove-Item -LiteralPath $targetPath -Recurse -Force
+        }
+    }
     & dotnet publish native/Varya.Desktop -c Release -p:Platform=x64 -o $outputRoot
     if ($LASTEXITCODE -ne 0) { throw 'Ошибка сборки WinUI' }
     & $pythonExe -m PyInstaller --noconfirm --distpath dist/native-engine --workpath build/native-engine Varya.Engine.spec

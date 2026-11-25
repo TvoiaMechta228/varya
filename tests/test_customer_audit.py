@@ -7,7 +7,7 @@ import pytest
 
 import conversation
 import features
-import gui
+from legacy import gui
 import main
 import safety
 import settings

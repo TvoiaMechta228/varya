@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 NS = "http://schemas.microsoft.com/wix/2006/wi"
 UPGRADE = "4639bb5a-6c6d-457c-8575-b048206c527d"
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 WIX_URL = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
 WIX_HASH = "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31"
 
@@ -224,8 +224,8 @@ def toolset() -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=ROOT / "dist/Varya-2.1.0")
-    parser.add_argument("--output", type=Path, default=ROOT / "dist/installer-2.1.0")
+    parser.add_argument("--source", type=Path, default=ROOT / "dist/Varya")
+    parser.add_argument("--output", type=Path, default=ROOT / "dist/installer")
     options = parser.parse_args()
     output = options.output.resolve()
     source = generate(options.source, output)

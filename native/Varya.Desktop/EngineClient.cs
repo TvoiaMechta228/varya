@@ -113,7 +113,7 @@ public sealed class EngineClient : IDisposable
                 {
                     process.StandardInput.WriteLine("{\"op\":\"close\"}");
                     process.StandardInput.Flush();
-                    if (!process.WaitForExit(2000)) process.Kill(true);
+                    if (!process.WaitForExit(2000)) process.Kill();
                 }
             }
             catch (Exception error) when (error is InvalidOperationException or IOException or System.ComponentModel.Win32Exception) { }

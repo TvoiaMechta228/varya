@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import scrolledtext, ttk
 
-import appearance as ui
+from legacy import appearance as ui
 import features
 import settings
 

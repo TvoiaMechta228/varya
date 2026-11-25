@@ -1,9 +1,9 @@
 param(
-    [string]$Directory = "$PSScriptRoot\dist\installer-2.1.0",
+    [string]$Directory = "$PSScriptRoot\dist\installer",
     [switch]$InitializeKey
 )
 $ErrorActionPreference = 'Stop'
-$privatePath = Join-Path $PSScriptRoot 'build\release-signing-key.xml'
+$privatePath = Join-Path $PSScriptRoot '.release-secrets\release-signing-key.xml'
 $publicPath = Join-Path $PSScriptRoot 'native\Varya.Desktop\Assets\UpdatePublicKey.xml'
 $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider(3072)
 $rsa.PersistKeyInCsp = $false
@@ -13,13 +13,13 @@ try {
         New-Item -ItemType Directory -Force (Split-Path $privatePath) | Out-Null
         [IO.File]::WriteAllText($privatePath, $rsa.ToXmlString($true))
         [IO.File]::WriteAllText($publicPath, $rsa.ToXmlString($false))
-        Write-Host 'Создан локальный ключ релизов. Приватный файл в build нельзя публиковать.'
+        Write-Host 'Создан локальный ключ релизов. Приватный файл в .release-secrets нельзя публиковать.'
         return
     }
     if (!(Test-Path -LiteralPath $privatePath)) { throw 'Нет приватного ключа релизов. Восстановите ключ из личной резервной копии.' }
     $rsa.FromXmlString([IO.File]::ReadAllText($privatePath))
     if ($rsa.ToXmlString($false) -ne [IO.File]::ReadAllText($publicPath)) { throw 'Ключ подписи не совпадает со встроенным открытым ключом.' }
-    $version = '2.1.0'
+    $version = '2.1.1'
     $assets = @(Get-ChildItem -LiteralPath $Directory -File | Where-Object { $_.Extension -in '.msi','.cab' } | Sort-Object Name | ForEach-Object {
         @{ name = $_.Name; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); url = "https://github.com/TvoiaMechta228/varya/releases/download/v$version/$($_.Name)" }
     })

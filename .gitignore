@@ -1,6 +1,9 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.ruff_cache/
+.release-secrets/
+tools/cleanup-report.json
 logs/
 *.py[cod]
 build/

@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 import webbrowser
 
 import config
@@ -13,8 +13,10 @@ import safety
 
 logger = logging.getLogger(__name__)
 MEDIA_KEYS = {
-    "громче": "volumeup", "тише": "volumedown",
-    "переключи звук": "volumemute", "пауза музыки": "playpause",
+    "громче": "volumeup",
+    "тише": "volumedown",
+    "переключи звук": "volumemute",
+    "пауза музыки": "playpause",
 }
 WINDOW_KEYS = {
     "сверни окно": ("win", "down"),
@@ -48,10 +50,41 @@ def _open_url(url: str) -> None:
     """Открыть URL и сообщить об отказе браузера."""
     if os.environ.get("VARYA_NATIVE") == "1":
         import browser_tools
+
+        url = browser_tools.valid_url(url)
+        host = (urlsplit(url).hostname or "").lower()
+        if host in {"ya.ru", "yandex.ru"} or host.endswith((".ya.ru", ".yandex.ru")):
+            browser = yandex_executable()
+            if browser is not None:
+                subprocess.Popen(
+                    [str(browser), url],
+                    shell=False,
+                    creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB,
+                )
+                return
+            if not webbrowser.open(url, new=2):
+                raise OSError("Не удалось открыть Яндекс в обычном браузере")
+            return
         browser_tools.open_url(url)
         return
     if not webbrowser.open(url, new=2):
         raise OSError("Не удалось открыть браузер")
+
+
+def yandex_executable() -> Path | None:
+    """Найти установленный Яндекс Браузер по фиксированным путям Windows."""
+    for variable in (
+        "LOCALAPPDATA",
+        "ProgramW6432",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+    ):
+        base = os.environ.get(variable)
+        if base:
+            candidate = Path(base) / "Yandex/YandexBrowser/Application/browser.exe"
+            if candidate.is_file():
+                return candidate
+    return None
 
 
 def open_app(name: str) -> bool:
@@ -81,7 +114,9 @@ def open_installed(name: str) -> bool:
     catalog = Dispatch("Shell.Application").NameSpace("shell:AppsFolder")
     if catalog is None:
         return False
-    found = [item for item in catalog.Items() if safety.normalize_text(item.Name) == name]
+    found = [
+        item for item in catalog.Items() if safety.normalize_text(item.Name) == name
+    ]
     if len(found) != 1:
         return False
     found[0].InvokeVerb("open")
@@ -128,7 +163,9 @@ def shutdown_pc() -> bool:
     if not safety.confirm("shutdown") or safety.speech.is_cancelled():
         return False
     subprocess.run(
-        [config.SHUTDOWN_EXE, "/s", "/t", "10"], check=True, shell=False,
+        [config.SHUTDOWN_EXE, "/s", "/t", "10"],
+        check=True,
+        shell=False,
     )
     return True
 
@@ -139,7 +176,9 @@ def reboot_pc() -> bool:
     if not safety.confirm("reboot") or safety.speech.is_cancelled():
         return False
     subprocess.run(
-        [config.SHUTDOWN_EXE, "/r", "/t", "10"], check=True, shell=False,
+        [config.SHUTDOWN_EXE, "/r", "/t", "10"],
+        check=True,
+        shell=False,
     )
     return True
 
@@ -148,5 +187,7 @@ def cancel_shutdown() -> None:
     """Отменить запланированное выключение или перезагрузку Windows."""
     _require_windows()
     subprocess.run(
-        [config.SHUTDOWN_EXE, "/a"], check=True, shell=False,
+        [config.SHUTDOWN_EXE, "/a"],
+        check=True,
+        shell=False,
     )

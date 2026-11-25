@@ -280,7 +280,7 @@ def test_real_pytest_runner_in_selected_project(tmp_path):
 
 def test_russian_layout_paste_shortcut():
     from types import SimpleNamespace
-    from gui import entry_shortcut
+    from legacy.gui import entry_shortcut
     field = Mock()
     event = SimpleNamespace(keycode=86, state=4, keysym="Cyrillic_em", widget=field)
     assert entry_shortcut(event) == "break"

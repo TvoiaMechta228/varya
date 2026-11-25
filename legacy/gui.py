@@ -9,9 +9,9 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-import appearance as ui
+from legacy import appearance as ui
 import config
-import cockpit
+from legacy import cockpit
 import missions
 import workspace_tasks
 from tray import Tray
@@ -19,7 +19,7 @@ import conversation
 from dialogue import Dialogue
 import features
 import main
-from organizer import Organizer
+from legacy.organizer import Organizer
 import settings
 import speech
 

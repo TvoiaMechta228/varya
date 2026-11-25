@@ -182,7 +182,7 @@ def run() -> None:
     tray = Tray(TrayEvents())
     threading.Thread(target=receive, daemon=True, name="NativeInput").start()
     threading.Thread(target=clock, daemon=True, name="NativeClock").start()
-    emit("ready", {"version": "2.1", "offline": True, "data": str(settings.DATA_DIR)})
+    emit("ready", {"version": config.ASSISTANT_VERSION, "offline": True, "data": str(settings.DATA_DIR)})
     snapshot()
     last_tick = 0.0
     try:

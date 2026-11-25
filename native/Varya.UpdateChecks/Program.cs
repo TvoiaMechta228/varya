@@ -3,6 +3,12 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Varya_Desktop;
 
+if (args.Length == 1 && args[0] == "--jobs")
+{
+    JobChecks.Run();
+    return;
+}
+
 if (args.Length == 3)
 {
     var release = UpdateService.Verify(await File.ReadAllBytesAsync(args[0]),

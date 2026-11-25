@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../Varya.Desktop/UpdateService.cs" Link="UpdateService.cs"/>
+    <Compile Include="../Varya.Desktop/NativeJob.cs" Link="NativeJob.cs"/>
   </ItemGroup>
 </Project>

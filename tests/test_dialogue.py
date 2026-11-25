@@ -10,7 +10,7 @@ import pytest
 import conversation
 import dialogue
 import features
-import gui
+from legacy import gui
 import main
 import settings
 import speech

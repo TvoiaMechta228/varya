@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import safety
 import speech
-from gui import AssistantController
+from legacy.gui import AssistantController
 from test_speech import _REAL_SPEAK
 
 

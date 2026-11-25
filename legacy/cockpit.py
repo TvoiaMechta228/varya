@@ -10,7 +10,7 @@ from queue import Empty, Queue
 from tkinter import ttk
 from urllib.request import ProxyHandler, build_opener
 
-import appearance as ui
+from legacy import appearance as ui
 import conversation
 import services
 import telemetry
