@@ -8,6 +8,13 @@ import sys
 import threading
 import time
 
+# Короткий UIA-процесс не загружает голосовые и языковые модели.
+if __name__ == "__main__" and len(sys.argv) in {3, 4} and sys.argv[1] == "--yandex-media":
+    from yandex_media import run_helper
+
+    run_helper(sys.argv[2], int(sys.argv[3]) if len(sys.argv) == 4 else 0)
+    raise SystemExit
+
 _wire = sys.stdout
 _wire.reconfigure(encoding="utf-8", errors="backslashreplace")
 sys.stdin.reconfigure(encoding="utf-8", errors="strict")

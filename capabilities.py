@@ -14,6 +14,7 @@ import settings
 import speech
 
 DESCRIPTIONS = {
+    "yandex_command": "команда сервисам Яндекса; argument — вся просьба пользователя: открыть Яндекс Музыку, искать в Картах/Маркете/Музыке, маршрут, перевод, медиакоманды. Не заменять Яндекс Музыку локальными файлами",
     "browser_open": "открыть сайт в управляемом браузере; argument — http/https адрес",
     "browser_tabs": "перечислить вкладки управляемого браузера",
     "browser_select": "выбрать вкладку; argument — её номер",
@@ -61,6 +62,7 @@ READ_ONLY = {
     "mail_unread",
 }
 IMMEDIATE = READ_ONLY | {
+    "yandex_command",
     "browser_open",
     "browser_select",
     "file_open",
@@ -330,6 +332,13 @@ def perform(session, action: str, data: dict, stamps: dict | None = None) -> Res
     if speech.is_cancelled():
         raise InterruptedError
     argument = data.get("argument", "")
+    if action == "yandex_command":
+        import yandex_tools
+
+        return yandex_tools.handle(session, argument) or Result(
+            "Уточни сервис и действие. Например, «найди в Яндекс Музыке Кино».",
+            ok=False,
+        )
     if action in {"plan_create", "plan_resume"}:
         import planning
 
@@ -359,6 +368,8 @@ def perform(session, action: str, data: dict, stamps: dict | None = None) -> Res
     if action.startswith("music_"):
         import music_tools
 
+        if action == "music_play":
+            session.yandex_service, session.yandex_until = "", 0.0
         argument = re.sub(r"(?:^|\s)пожалуйста$", "", argument, flags=re.I).strip()
         return Result(
             music_tools.play(argument)
@@ -490,7 +501,13 @@ def perform(session, action: str, data: dict, stamps: dict | None = None) -> Res
 
 def direct(session, raw: str) -> Result | None:
     """Распознать обычные просьбы без загрузки языковой модели."""
+    import yandex_tools
+
+    result = yandex_tools.handle(session, raw)
+    if result is not None:
+        return result
     patterns = (
+        (r"(?:включи|запусти|поставь) локальную музыку(?: (.+))?", "music_play"),
         (r"(?:поставь музыку на паузу|пауза музыки)", "music_pause"),
         (
             r"(?:включи|запусти|поставь|хочу послушать|давай послушаем) музыку(?: (.+))?",

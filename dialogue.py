@@ -75,6 +75,8 @@ class Dialogue:
     plan_waiting: bool = False
     last_request: str = ""
     last_result: str = ""
+    yandex_service: str = ""
+    yandex_until: float = 0.0
 
     def ask(self, slot: str, prompt: str) -> tuple[str, str]:
         """Ожидать один аргумент в течение минуты."""

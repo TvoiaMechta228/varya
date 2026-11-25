@@ -115,7 +115,7 @@ def main() -> None:
             server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             try:
-                assert wait("ready", 30)[-1]["value"]["version"] == "2.1.1"
+                assert wait("ready", 30)[-1]["value"]["version"] == "2.2.0"
                 doc = data / "отчёт.docx"
                 answer = command(f"Запиши в документ {doc} что встреча завтра")
                 assert not doc.exists() and any(

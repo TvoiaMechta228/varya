@@ -153,6 +153,7 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             present(result)
             return True
         if command in {"забудь разговор", "режим команд", "закончи разговор"}:
+            session.yandex_service, session.yandex_until = "", 0.0
             session.last_request = session.last_result = session.selected_timer = session.selected_note = ""
             session.selected_window = session.button_target = None
             session.buttons = ()

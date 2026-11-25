@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import actions
 import config
 import speech
-from dialogue import phrase
+from dialogue import Dialogue, phrase
 from safety import normalize_text
 
 
@@ -26,7 +26,7 @@ def parse(text: str) -> tuple[Step, ...] | None:
     ):
         return None
     # В цитатах могут встречаться глаголы, которые являются частью названия.
-    if any(mark in text for mark in ('"', '«', '»')):
+    if any(mark in text for mark in ('"', "«", "»")):
         return None
     parts = re.split(
         r"(?:\s*[,;]\s*|\s+)(?:а\s+)?(?:затем|потом|после этого|далее)\s+"
@@ -42,12 +42,28 @@ def parse(text: str) -> tuple[Step, ...] | None:
     from requests_pc import _ALIASES, FOLDERS, PAGES
 
     steps = []
+    context = Dialogue()
     for part in parts:
-        music = re.fullmatch(r"(?:включи|поставь|запусти|запустить|включить) музыку(?: (.+))?", part.strip(" ,;.!?"), re.I)
+        import yandex_tools
+
+        intent = yandex_tools.parse(part.strip(" ,;.!?"), context)
+        if intent is not None and intent.operation not in {"help", "choose"}:
+            label = config.YANDEX_SERVICES[intent.service][0]
+            steps.append(Step("yandex", part.strip(" ,;.!?"), "Яндекс · " + label))
+            context.yandex_service = intent.service
+            context.yandex_until = float("inf")
+            continue
+        music = re.fullmatch(
+            r"(?:включи|поставь|запусти|запустить|включить) музыку(?: (.+))?",
+            part.strip(" ,;.!?"),
+            re.I,
+        )
         if music:
             steps.append(Step("music", music[1] or "", "Воспроизвести музыку"))
             continue
-        raw = phrase(re.sub(r"^сначала\s+", "", part.strip(" ,;.!?"), flags=re.IGNORECASE))
+        raw = phrase(
+            re.sub(r"^сначала\s+", "", part.strip(" ,;.!?"), flags=re.IGNORECASE)
+        )
         key = normalize_text(raw)
         open_target = key.removeprefix("открой ").removeprefix("покажи ")
         open_target = config.APP_ALIASES.get(open_target, open_target)
@@ -75,9 +91,18 @@ def parse(text: str) -> tuple[Step, ...] | None:
     return tuple(steps)
 
 
-def execute(step: Step) -> None:
+def execute(step: Step, session: Dialogue | None = None) -> None:
+    """Выполнить шаг и остановить цепочку при неподтверждённом результате."""
+    if step.action == "yandex":
+        import yandex_tools
+
+        result = yandex_tools.handle(session or Dialogue(), step.argument)
+        if result is None or not result.ok:
+            raise OSError(result.text if result else "Неизвестная команда Яндекса")
+        return
     if step.action == "music":
         import music_tools
+
         answer = music_tools.play(step.argument)
         if not answer.startswith("Играет"):
             raise OSError(answer)

@@ -296,14 +296,19 @@ def test_russian_layout_paste_shortcut():
 def test_browser_and_music_use_local_ordered_actions(session, monkeypatch, utterance):
     import requests_pc
     import music_tools
+    import yandex_media
+    from command_results import Result
     monkeypatch.setattr(actions, "open_app", app := Mock(return_value=True))
-    monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(actions, "_open_url", service := Mock())
     monkeypatch.setattr(music_tools, "play", music := Mock(return_value="Играет тест"))
+    monkeypatch.setattr(yandex_media, "control", media := Mock(return_value=Result("Включено")))
     monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
     main.route_command(utterance, dialogue=session, typed=True)
     app.assert_called_once_with("браузер")
     if "яндекс" in utterance.casefold():
         service.assert_called_once()
+        media.assert_called_once_with("resume")
+        music.assert_not_called()
     else:
         music.assert_called_once()
         service.assert_not_called()
@@ -319,7 +324,7 @@ def test_browser_and_music_use_local_ordered_actions(session, monkeypatch, utter
 def test_music_does_not_require_model_or_confirmation(session, monkeypatch, utterance):
     import requests_pc
     import music_tools
-    monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(actions, "_open_url", service := Mock())
     monkeypatch.setattr(music_tools, "play", music := Mock(return_value="Играет тест"))
     monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
     main.route_command(utterance, dialogue=session, typed=True)

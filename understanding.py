@@ -106,6 +106,9 @@ async def interpret(text: str, last_result: str = "") -> Intent:
     elif re.search(r"найди ответ|узнай в интернете|проверь в интернете", text, re.I):
         common = {key: ACTIONS[key] for key in ("chat", "unsupported", "search")}
         common["internet_answer"] = capabilities.DESCRIPTIONS["internet_answer"]
+    elif re.search(r"яндекс|кинопоиск|мою волну", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported")}
+        common["yandex_command"] = capabilities.DESCRIPTIONS["yandex_command"]
     elif re.search(r"сайт|вкладк|страниц|браузер", text, re.I):
         common = {key: ACTIONS[key] for key in ("chat", "unsupported", "app", "search")}
         common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("browser_")})

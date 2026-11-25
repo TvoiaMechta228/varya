@@ -53,7 +53,7 @@ def _open_url(url: str) -> None:
 
         url = browser_tools.valid_url(url)
         host = (urlsplit(url).hostname or "").lower()
-        if host in {"ya.ru", "yandex.ru"} or host.endswith((".ya.ru", ".yandex.ru")):
+        if host in {"ya.ru", "yandex.ru", "kinopoisk.ru", "www.kinopoisk.ru"} or host.endswith((".ya.ru", ".yandex.ru")):
             browser = yandex_executable()
             if browser is not None:
                 subprocess.Popen(

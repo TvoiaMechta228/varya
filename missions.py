@@ -224,7 +224,7 @@ def sequence_request(session, text: str) -> Result | None:
     if not steps:
         return None
     plan = Plan("sequence", time.monotonic() + 90, mode(), steps=steps)
-    return run(plan)
+    return run(plan, session)
 
 
 def confirm(session, command: str) -> Result | None:
@@ -241,13 +241,13 @@ def confirm(session, command: str) -> Result | None:
     return run(plan)
 
 
-def run(plan: Plan) -> Result:
+def run(plan: Plan, session=None) -> Result:
     name = LABELS[plan.kind]
     audit(name, "Начато выполнение.")
     try:
         if speech.is_cancelled() or plan.mode != mode():
             raise InterruptedError
-        result = execute(plan)
+        result = execute(plan, session)
     except InterruptedError:
         result = Result("Выполнение остановлено.")
     except Exception as error:
@@ -258,7 +258,7 @@ def run(plan: Plan) -> Result:
     return result
 
 
-def execute(plan: Plan) -> Result:
+def execute(plan: Plan, session=None) -> Result:
     stopped = lambda: speech.is_cancelled() or mode() != plan.mode
     if plan.kind in {"ocr", "ocr_window"}:
         import screen_reader
@@ -301,13 +301,15 @@ def execute(plan: Plan) -> Result:
             str(save_report("pytest", report)),
         )
     if plan.kind == "sequence":
+        from dialogue import Dialogue
+        session = session or Dialogue()
         completed = 0
         for index, step in enumerate(plan.steps, 1):
             if stopped():
                 break
             progress(f"{index}/{len(plan.steps)} · {step.title}")
             try:
-                sequences.execute(step)
+                sequences.execute(step, session)
             except Exception as error:
                 logging.getLogger(__name__).exception("Не завершён шаг %s", step.title)
                 return Result(

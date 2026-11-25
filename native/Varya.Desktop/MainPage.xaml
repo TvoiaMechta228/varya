@@ -42,7 +42,7 @@
           <TextBlock Text="Привет. Я Варя." FontSize="32" FontWeight="SemiBold"/>
           <TextBlock Text="Напиши, что сделать. Для разговора включи микрофон — речь и голос работают локально." TextWrapping="Wrap" FontSize="16" Foreground="#C2D0D5"/>
           <StackPanel Spacing="8">
-           <Button Content="Открой браузер и включи музыку" Click="Suggestion" Tag="открой браузер и включи музыку" HorizontalAlignment="Stretch"/>
+           <Button Content="Включи Яндекс Музыку" Click="Suggestion" Tag="включи яндекс музыку" HorizontalAlignment="Stretch"/>
            <Button Content="Напомни размяться через 20 минут" Click="Suggestion" Tag="напомни через двадцать минут размяться" HorizontalAlignment="Stretch"/>
            <Button Content="Посмотри, как работает компьютер" Click="Suggestion" Tag="проверь компьютер" HorizontalAlignment="Stretch"/>
           </StackPanel>
@@ -123,7 +123,7 @@
         <Button x:Name="InstallUpdateButton" Content="Загрузить и установить" Click="InstallUpdate" IsEnabled="False"/>
         <Button x:Name="CancelUpdateButton" Content="Отменить загрузку" Click="CancelUpdate" Visibility="Collapsed"/>
        </StackPanel>
-       <TextBlock Text="Варя 2.1.1 · WinUI 3 · Whisper · Piper · Qwen 1.5B" Foreground="#A5B5BC" TextWrapping="Wrap"/>
+       <TextBlock Text="Варя 2.2.0 · WinUI 3 · Whisper · Piper · Qwen 1.5B" Foreground="#A5B5BC" TextWrapping="Wrap"/>
        <TextBlock Text="Модели находятся в папке приложения. Интернет для повседневной работы не требуется. Нагрузка растёт во время распознавания и общения." TextWrapping="Wrap" Foreground="#A5B5BC"/>
       </StackPanel>
      </ScrollViewer>

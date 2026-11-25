@@ -19,7 +19,7 @@ try {
     if (!(Test-Path -LiteralPath $privatePath)) { throw 'Нет приватного ключа релизов. Восстановите ключ из личной резервной копии.' }
     $rsa.FromXmlString([IO.File]::ReadAllText($privatePath))
     if ($rsa.ToXmlString($false) -ne [IO.File]::ReadAllText($publicPath)) { throw 'Ключ подписи не совпадает со встроенным открытым ключом.' }
-    $version = '2.1.1'
+    $version = '2.2.0'
     $assets = @(Get-ChildItem -LiteralPath $Directory -File | Where-Object { $_.Extension -in '.msi','.cab' } | Sort-Object Name | ForEach-Object {
         @{ name = $_.Name; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); url = "https://github.com/TvoiaMechta228/varya/releases/download/v$version/$($_.Name)" }
     })
