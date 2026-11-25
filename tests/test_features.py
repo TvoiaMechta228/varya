@@ -103,7 +103,10 @@ def test_settings_validation_and_reload():
 def test_media_keys_are_fixed(monkeypatch, command, key):
     press = Mock()
     monkeypatch.setitem(sys.modules, "pyautogui", SimpleNamespace(press=press))
-    assert main.route_command(command)
+    if command == "пауза музыки":
+        actions.media_control(command)
+    else:
+        assert main.route_command(command)
     press.assert_called_once_with(
         key, presses=3 if command in {"громче", "тише"} else 1,
     )

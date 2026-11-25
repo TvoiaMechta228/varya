@@ -17,6 +17,7 @@ class Result:
     text: str
     card: str = ""
     value: str = ""
+    ok: bool = True
 
 
 def timer_reference(session: Dialogue, verb: str, name: str = "") -> Result:

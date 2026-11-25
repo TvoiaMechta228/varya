@@ -31,7 +31,7 @@ def parse(text: str) -> tuple[Step, ...] | None:
     parts = re.split(
         r"(?:\s*[,;]\s*|\s+)(?:а\s+)?(?:затем|потом|после этого|далее)\s+"
         r"|(?:\s*[,;]\s*|\s+(?:и\s+)?)(?=(?:открой|запусти|включи|покажи|"
-        r"сделай|выключи|перезагрузи|удали|закрой|найди|запустить|открыть|включить)\b)",
+        r"сделай|поставь|выключи|перезагрузи|удали|закрой|найди|запустить|открыть|включить)\b)",
         re.sub(r"^сначала\s+", "", text.strip(), flags=re.I),
         flags=re.IGNORECASE,
     )
@@ -43,6 +43,10 @@ def parse(text: str) -> tuple[Step, ...] | None:
 
     steps = []
     for part in parts:
+        music = re.fullmatch(r"(?:включи|поставь|запусти|запустить|включить) музыку(?: (.+))?", part.strip(" ,;.!?"), re.I)
+        if music:
+            steps.append(Step("music", music[1] or "", "Воспроизвести музыку"))
+            continue
         raw = phrase(re.sub(r"^сначала\s+", "", part.strip(" ,;.!?"), flags=re.IGNORECASE))
         key = normalize_text(raw)
         open_target = key.removeprefix("открой ").removeprefix("покажи ")
@@ -72,7 +76,12 @@ def parse(text: str) -> tuple[Step, ...] | None:
 
 
 def execute(step: Step) -> None:
-    if step.action == "service":
+    if step.action == "music":
+        import music_tools
+        answer = music_tools.play(step.argument)
+        if not answer.startswith("Играет"):
+            raise OSError(answer)
+    elif step.action == "service":
         actions.open_service(step.argument)
     elif step.action == "app":
         if not actions.open_app(step.argument):

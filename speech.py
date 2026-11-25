@@ -23,6 +23,10 @@ _sapi_preference = None
 _calibrated = False
 _last_service_error = float("-inf")
 quiet_reply: ContextVar[bool] = ContextVar("quiet_reply", default=False)
+streaming_reply: ContextVar[Any] = ContextVar("streaming_reply", default=None)
+audio_cancel: ContextVar[threading.Event | None] = ContextVar("audio_cancel", default=None)
+barge_in_enabled = False
+barge_in_callback: Callable[[], None] | None = None
 transcript: ContextVar[Callable[[str, str], None] | None] = ContextVar(
     "transcript", default=None,
 )
@@ -30,6 +34,9 @@ transcript: ContextVar[Callable[[str, str], None] | None] = ContextVar(
 
 def publish(role: str, text: str) -> None:
     """Передать реплику интерфейсу речевого потока."""
+    stream = streaming_reply.get()
+    if role == "delta" and stream is not None:
+        stream.feed(text)
     listener = transcript.get()
     if listener is not None:
         listener(role, text)
@@ -46,6 +53,8 @@ def new_session() -> None:
 def is_cancelled() -> bool:
     """Проверить остановку с кнопки интерфейса."""
     return (
+        audio_cancel.get() is not None and audio_cancel.get().is_set()
+        or
         cancel_event is not None and cancel_event.is_set()
         or shutdown_event is not None and shutdown_event.is_set()
     )
@@ -108,12 +117,19 @@ def speak(text: str) -> bool:
     publish("assistant", text)
     if settings.snapshot()["save_history"]:
         logger.info("Ответ: %s", text)
-    if sys.stdout is not None:
+    if sys.stdout is not None and sys.stdout is not sys.stderr:
         print(f"{config.ASSISTANT_NAME}: {text}", flush=True)
     options = settings.snapshot()
     if quiet_reply.get():
         return not is_cancelled()
     publish("state", "Озвучиваю ответ…")
+    if options["voice"] == "piper":
+        try:
+            import offline_speech
+            return offline_speech.speak(text, options["rate"], options["volume"])
+        except Exception:
+            logger.exception("Локальный голос Piper недоступен")
+            publish("notice", "Голос Piper недоступен. Использую голос Windows.")
     if options["voice"] == "neural" and time.monotonic() >= _neural_retry_at:
         try:
             import neural_voice
@@ -204,6 +220,9 @@ def listen(
     try:
         if is_cancelled():
             return None
+        if settings.snapshot().get("recognition") == "vosk":
+            import offline_speech
+            return offline_speech.listen(timeout, phrase_time_limit)
         recognizer = _get_recognizer()
         with sr.Microphone(device_index=settings.snapshot().get("microphone", config.MICROPHONE_INDEX)) as source:
             if not _calibrated:

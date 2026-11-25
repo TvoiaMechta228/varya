@@ -102,7 +102,7 @@ def test_model_offline_then_local_request(monkeypatch, mute_speech):
     monkeypatch.setattr(actions, "media_control", action := Mock())
     session = Dialogue()
     main.route_command("слишком громко играет", dialogue=session)
-    assert "Ollama" in mute_speech.call_args.args[0]
+    assert "локальной моделью" in mute_speech.call_args.args[0]
     main.route_command("сделай чуть потише", dialogue=session)
     action.assert_called_once_with("тише")
 

@@ -46,6 +46,10 @@ def _require_windows() -> None:
 
 def _open_url(url: str) -> None:
     """Открыть URL и сообщить об отказе браузера."""
+    if os.environ.get("VARYA_NATIVE") == "1":
+        import browser_tools
+        browser_tools.open_url(url)
+        return
     if not webbrowser.open(url, new=2):
         raise OSError("Не удалось открыть браузер")
 

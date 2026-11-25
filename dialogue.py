@@ -67,6 +67,12 @@ class Dialogue:
     proposal: "Proposal | None" = None
     button_target: tuple[int, int, str] | None = None
     buttons: tuple["Button", ...] = ()
+    capability: object | None = None
+    file_choices: tuple[str, ...] = ()
+    selected_file: str = ""
+    field_choices: tuple = ()
+    plan_id: str = ""
+    plan_waiting: bool = False
     last_request: str = ""
     last_result: str = ""
 

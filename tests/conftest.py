@@ -1,6 +1,7 @@
 """Общие моки: тесты не озвучивают ответы и не калибруют микрофон."""
 
 from unittest.mock import Mock
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,7 +18,7 @@ def mute_speech(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "SETTINGS_FILE", tmp_path / "settings.json")
     mock = Mock(return_value=True)
     monkeypatch.setattr(speech, "speak", mock)
-    monkeypatch.setattr(speech.time, "sleep", Mock())
+    monkeypatch.setattr(speech, "time", SimpleNamespace(sleep=Mock(), monotonic=speech.time.monotonic))
     monkeypatch.setattr(settings, "_current", {
         **settings.DEFAULTS, "voice": "sapi",
     })

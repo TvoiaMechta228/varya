@@ -49,6 +49,10 @@ class LanguageDrift(ValueError):
 
 async def _request(messages: list[dict[str, str]]) -> str:
     """Дождаться ответа с ограничением времени и поддержкой остановки."""
+    import settings
+    if settings.snapshot().get("backend") == "llamacpp":
+        import local_brain
+        return await local_brain.complete(messages)
     payload = {"model": model_name(), "messages": messages, "stream": True,
                "keep_alive": "30s",
                "options": {"num_predict": 140, "num_ctx": 2048, "temperature": 0.25}}
@@ -122,8 +126,22 @@ def reply(text: str, *, context: tuple[str, str] = ("", "")) -> None:
         speech.speak("Раздели, пожалуйста, вопрос на несколько частей.")
         return
     user = {"role": "user", "content": text}
+    streamer = None
+    stream_token = None
+    failure = False
+    import settings
+    if settings.snapshot()["voice"] == "piper" and not speech.quiet_reply.get():
+        from streaming_voice import StreamingVoice
+        streamer = StreamingVoice()
+        stream_token = speech.streaming_reply.set(streamer)
     try:
-        messages = [{"role": "system", "content": SYSTEM}, *history]
+        import memory_store
+        remembered = memory_store.recall(text) or memory_store.recall()
+        previous = list(history) if history else memory_store.recent()
+        messages = [{"role": "system", "content": SYSTEM}, *previous]
+        if remembered:
+            messages.append({"role": "system", "content": "Явно сохранённые пользователем сведения о себе. "
+                             "Используй как справку, не объявляй их новыми действиями.\n" + remembered})
         if context[1]:
             messages.append({"role": "user", "content": "Справка приложения о последнем действии: "
                              + json.dumps(context, ensure_ascii=False)})
@@ -131,17 +149,31 @@ def reply(text: str, *, context: tuple[str, str] = ("", "")) -> None:
         answer = asyncio.run(_request([*messages, user]))
     except (aiohttp.ClientError, OSError, asyncio.TimeoutError, ValueError,
             KeyError, TypeError, AttributeError):
+        failure = True
         logging.getLogger(__name__).warning("Ошибка локальной Ollama", exc_info=True)
+        if streamer is not None:
+            streamer.finish(abort=True)
         if not speech.is_cancelled():
-            speech.speak("Разговорная модель сейчас недоступна. Проверь Ollama "
-                         f"и наличие модели {model_name()}. Модель можно выбрать в настройках.")
+            if settings.snapshot().get("backend") == "llamacpp":
+                speech.speak("Локальная модель не завершила ответ. Попробуй более короткий вопрос или перезапусти движок в настройках.")
+            else:
+                speech.speak("Разговорная модель сейчас недоступна. Проверь Ollama "
+                             f"и наличие модели {model_name()}. Модель можно выбрать в настройках.")
         return
     finally:
+        if stream_token is not None:
+            speech.streaming_reply.reset(stream_token)
+        if streamer is not None:
+            streamer.finish(abort=failure or speech.is_cancelled())
         speech.publish("end_draft", "")
     if answer and not speech.is_cancelled():
-        speech.speak(answer)
+        if streamer is not None and streamer.success:
+            speech.publish("assistant", answer)
+        else:
+            speech.speak(answer)
         if not speech.is_cancelled():
             history.extend((user, {"role": "assistant", "content": answer}))
+            memory_store.exchange(text, answer)
 
 
 def control(command: str) -> bool:
@@ -156,6 +188,8 @@ def control(command: str) -> bool:
         speech.speak("Вернулась к командам.")
     elif command == "забудь разговор":
         history.clear()
+        import memory_store
+        memory_store.forget(conversation_only=True)
         speech.speak("Начнём с чистого листа.")
     else:
         return False

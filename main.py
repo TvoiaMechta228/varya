@@ -10,6 +10,7 @@ import subprocess
 import time
 
 import actions
+import capabilities
 import config
 import conversation
 import desktop
@@ -64,7 +65,7 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
     elif (not typed and (require_wake or settings.snapshot()["wake_word"])
           and normalize_text(text) not in {"стоп", "выход", "пока"}):
         if not (dialogue and ((dialogue.pending and heard_at < dialogue.until)
-                              or ((dialogue.mission or dialogue.proposal) and heard_at < (dialogue.mission or dialogue.proposal).expires
+                              or ((dialogue.mission or dialogue.proposal or dialogue.capability) and heard_at < (dialogue.mission or dialogue.proposal or dialogue.capability).expires
                                   and normalize_text(text) in requests_pc.REPLIES))):
             return True
     original = text
@@ -83,8 +84,12 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
         if missions.mode() == "Наблюдатель":
             session.pending = ""
             session.mission = session.proposal = None
+            session.capability = None
             kind = missions.identify(command)
-            if kind in missions.READ_ONLY:
+            extra = capabilities.direct(session, text)
+            if extra is not None:
+                speech.speak(extra.text)
+            elif kind in missions.READ_ONLY:
                 speech.speak(missions.request(session, kind).text)
             elif command in {"мои таймеры", "мои заметки", "что ты умеешь", "сколько осталось"}:
                 features.handle(command, text)
@@ -95,15 +100,27 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
             else:
                 speech.speak("В режиме наблюдателя доступны диагностика, просмотр и вопросы. Для управления выбери «Помощник» в настройках.")
             return True
-        confirmed = missions.confirm(session, command)
+        plan_confirmation = bool(session.plan_id and session.plan_waiting)
+        if plan_confirmation and command in {"да", "подтверждаю", "сделай"}:
+            import planning
+            planning.mark_running(session)
+        confirmed = capabilities.confirmation(session, command)
+        if confirmed is None:
+            confirmed = missions.confirm(session, command)
         if confirmed is None:
             confirmed = requests_pc.confirmation(session, command)
         if confirmed is not None:
+            if plan_confirmation:
+                import planning
+                confirmed = planning.advance(session, confirmed)
             if confirmed.card:
                 speech.publish(confirmed.card, confirmed.value)
             session.last_request, session.last_result = original, confirmed.text
             speech.speak(confirmed.text)
             return True
+        if plan_confirmation:
+            import planning
+            planning.pause(session, "Пользователь перешёл к другой просьбе")
         direct_kind = None if session.pending else missions.identify(command)
         text, question = session.prepare(text, now=heard_at)
         if question:
@@ -125,7 +142,9 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
                 answer(result.text)
 
         kind = direct_kind or missions.identify(command)
-        result = missions.request(session, kind) if kind else command_results.execute(session, command, text)
+        result = capabilities.direct(session, original)
+        if result is None:
+            result = missions.request(session, kind) if kind else command_results.execute(session, command, text)
         if result is None:
             result = missions.sequence_request(session, text)
         if result is None:
@@ -189,9 +208,15 @@ def route_command(text: str, *, dialogue: Dialogue | None = None,
                 present(result)
         else:
             speech.speak("Команда не распознана.")
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except InterruptedError:
+        return True
+    except ValueError as error:
+        logger.warning("Некорректные параметры действия: %s", error)
+        speech.speak(str(error)[:500])
+    except (OSError, subprocess.SubprocessError) as error:
         logger.exception("Не удалось выполнить команду")
-        speech.speak("Не удалось выполнить команду. Подробности в журнале.")
+        detail = str(error).split("Call log:", 1)[0][:240]
+        speech.speak("Не удалось выполнить команду. " + detail)
     except Exception:
         logger.exception("Непредвиденная ошибка действия")
         speech.speak("Произошла ошибка. Попробуйте ещё раз.")

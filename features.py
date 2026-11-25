@@ -31,6 +31,10 @@ def save_timers() -> None:
             temporary = path.with_suffix(".tmp")
             temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             temporary.replace(path)
+            import reminder_schedule
+            message = reminder_schedule.refresh([item["deadline"] for item in data])
+            if message:
+                speech.publish("notice", message)
         except OSError:
             logger.exception("Не удалось сохранить таймеры")
             speech.publish("notice", "Таймеры работают, но сохранить их для перезапуска не удалось.")
@@ -292,6 +296,7 @@ def handle(command: str, raw: str) -> bool:
     elif command == "отмени таймеры":
         with _timer_lock:
             _timers.clear()
+            save_timers()
         speech.speak("Таймеры отменены.")
     elif command == "сколько осталось":
         active = remaining()

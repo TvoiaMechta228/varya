@@ -8,6 +8,7 @@ import re
 import aiohttp
 
 import conversation
+import capabilities
 import speech
 
 
@@ -38,6 +39,7 @@ ACTIONS = {
     "search": "найти в интернете; argument — поисковый запрос",
     "screenshot": "сохранить снимок экрана",
 }
+ACTIONS.update(capabilities.DESCRIPTIONS)
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -76,7 +78,7 @@ class Intent:
         action, arg, seconds = (value[k] for k in ("action", "argument", "seconds"))
         if not isinstance(action, str) or action not in ACTIONS or not isinstance(arg, str):
             raise ValueError("Неизвестное действие")
-        if len(arg) > 500 or (arg and not arg.isprintable()):
+        if len(arg) > 2000 or (arg and not arg.isprintable()):
             raise ValueError("Некорректный аргумент")
         if type(seconds) is not int or not 0 <= seconds <= 86400 or (action != "timer" and seconds):
             raise ValueError("Некорректная длительность")
@@ -94,15 +96,50 @@ def ordinary_question(text: str) -> bool:
 
 async def interpret(text: str, last_result: str = "") -> Intent:
     """Получить и проверить JSON с возможностью прервать холодный запуск модели."""
-    payload = {"model": conversation.model_name(), "stream": False, "format": SCHEMA,
+    common = {key: value for key, value in ACTIONS.items() if key not in capabilities.DESCRIPTIONS}
+    if re.search(r"поручени|составь.*план|по шагам|продолжи.*план", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("plan_")})
+    elif re.search(r"созда[йть].*(?:приложени|программ|проект)|разработай|напиши.*(?:программ|приложени)", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported")}
+        common["project_generate"] = capabilities.DESCRIPTIONS["project_generate"]
+    elif re.search(r"найди ответ|узнай в интернете|проверь в интернете", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "search")}
+        common["internet_answer"] = capabilities.DESCRIPTIONS["internet_answer"]
+    elif re.search(r"сайт|вкладк|страниц|браузер", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "app", "search")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("browser_")})
+    elif re.search(r"файл|документ|ворд|excel|таблиц|ячейк|слайд|презентац|изображ|фото", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "folder", "check")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items()
+                       if key.startswith("file_") or key in capabilities.DOCUMENT_ACTIONS})
+    elif re.search(r"обо мне|помнишь|предпочтени", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "note", "notes")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("profile_")})
+    elif re.search(r"письмо|письма|почт|email|e-mail", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("mail_")})
+    elif re.search(r"музык|песн|трек|играет", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "app", "quieter", "louder")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("music_")})
+    elif re.search(r"поле|окно|окне", text, re.I):
+        common = {key: ACTIONS[key] for key in ("chat", "unsupported", "windows", "buttons", "focus", "minimize", "maximize")}
+        common.update({key: value for key, value in capabilities.DESCRIPTIONS.items() if key.startswith("window_")})
+    instructions = INSTRUCTIONS.split("{" , 1)[0] + json.dumps(common, ensure_ascii=False)
+    schema = {**SCHEMA, "properties": {**SCHEMA["properties"], "action": {"type": "string", "enum": list(common)}}}
+    payload = {"model": conversation.model_name(), "stream": False, "format": schema,
                "keep_alive": "30s",
-               "messages": [{"role": "system", "content": INSTRUCTIONS},
+               "messages": [{"role": "system", "content": instructions},
                             {"role": "user", "content": json.dumps(
                                 {"request": text, "previous_result": last_result[:240]},
                                 ensure_ascii=False)}],
                "options": {"temperature": 0, "num_predict": 160, "num_ctx": 2048}}
 
     async def request() -> Intent:
+        import settings
+        if settings.snapshot().get("backend") == "llamacpp":
+            import local_brain
+            return Intent.parse(await local_brain.complete(payload["messages"], schema))
         timeout = aiohttp.ClientTimeout(total=25, connect=3)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as client:
             async with client.post(conversation.URL, json=payload, allow_redirects=False) as response:

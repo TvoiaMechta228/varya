@@ -1,0 +1,146 @@
+<Page x:Class="Varya_Desktop.MainPage"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" RequestedTheme="Dark">
+ <Grid Background="#111518">
+  <NavigationView x:Name="Navigation" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed"
+    IsSettingsVisible="True" OpenPaneLength="210" SelectionChanged="Navigate" PaneTitle="Варя">
+   <NavigationView.Resources>
+    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#141B1F"/>
+    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#141B1F"/>
+   </NavigationView.Resources>
+   <NavigationView.MenuItems>
+    <NavigationViewItem Content="Диалог" Tag="chat" Icon="Message" IsSelected="True"/>
+    <NavigationViewItem Content="Таймеры и заметки" Tag="tasks" Icon="Clock"/>
+    <NavigationViewItem Content="Журнал действий" Tag="history" Icon="List"/>
+   </NavigationView.MenuItems>
+   <NavigationView.PaneFooter>
+    <StackPanel Margin="16,12" Spacing="8">
+     <TextBlock Text="Всё на твоём компьютере" FontSize="12" Foreground="#9EAEB4" TextWrapping="Wrap"/>
+     <Button x:Name="TrayButton" Content="Свернуть в трей" Click="HideToTray" IsEnabled="False"/>
+    </StackPanel>
+   </NavigationView.PaneFooter>
+   <Grid Padding="28,16,28,20" RowSpacing="12">
+    <Grid.RowDefinitions>
+     <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid ColumnSpacing="12">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <StackPanel Spacing="3">
+      <TextBlock Text="Рядом, когда нужна" FontSize="26" FontWeight="SemiBold"/>
+      <TextBlock x:Name="Status" Text="Запускаю помощницу…" Foreground="#A5B5BC" TextWrapping="Wrap"/>
+     </StackPanel>
+     <Button Grid.Column="1" x:Name="StopButton" Content="Остановить" Click="Stop" IsEnabled="False" VerticalAlignment="Center"/>
+    </Grid>
+    <InfoBar Grid.Row="1" x:Name="Notice" IsOpen="False" IsClosable="True" Severity="Informational"/>
+    <Grid Grid.Row="2">
+     <Grid x:Name="ChatPage" RowSpacing="12">
+      <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <ScrollViewer x:Name="ChatScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+       <StackPanel x:Name="Messages" Spacing="18" Padding="0,12,12,24">
+        <Border x:Name="Welcome" Padding="28" CornerRadius="16" Background="#1B2429" Margin="0,20,0,0">
+         <StackPanel Spacing="16">
+          <TextBlock Text="Привет. Я Варя." FontSize="32" FontWeight="SemiBold"/>
+          <TextBlock Text="Напиши, что сделать. Для разговора включи микрофон — речь и голос работают локально." TextWrapping="Wrap" FontSize="16" Foreground="#C2D0D5"/>
+          <StackPanel Spacing="8">
+           <Button Content="Открой браузер и включи музыку" Click="Suggestion" Tag="открой браузер и включи музыку" HorizontalAlignment="Stretch"/>
+           <Button Content="Напомни размяться через 20 минут" Click="Suggestion" Tag="напомни через двадцать минут размяться" HorizontalAlignment="Stretch"/>
+           <Button Content="Посмотри, как работает компьютер" Click="Suggestion" Tag="проверь компьютер" HorizontalAlignment="Stretch"/>
+          </StackPanel>
+          <TextBlock Text="Для опасных действий я запрошу подтверждение." FontSize="12" Foreground="#92A5AE" TextWrapping="Wrap"/>
+         </StackPanel>
+        </Border>
+       </StackPanel>
+      </ScrollViewer>
+      <TextBlock Grid.Row="1" x:Name="Partial" TextWrapping="Wrap" FontStyle="Italic" Foreground="#A8D9CC"/>
+      <StackPanel Grid.Row="2" x:Name="Choices" Orientation="Horizontal" Spacing="8"/>
+     </Grid>
+     <ScrollViewer x:Name="TasksPage" Visibility="Collapsed">
+      <StackPanel Spacing="16" Padding="0,16,12,20">
+       <TextBlock Text="Сохранённые поручения" FontSize="24" FontWeight="SemiBold"/>
+       <StackPanel x:Name="Plans" Spacing="10"/>
+       <TextBlock Text="Таймеры" FontSize="24" FontWeight="SemiBold"/>
+       <TextBlock Text="Сроки сохраняются между запусками. Для сигнала оставь Варю открытой или в трее." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <StackPanel x:Name="Timers" Spacing="8"/>
+       <Button Content="Поставить таймер…" Tag="поставь таймер" Click="Suggestion"/>
+       <TextBlock Text="Заметки" FontSize="24" FontWeight="SemiBold" Margin="0,16,0,0"/>
+       <TextBox x:Name="NoteInput" PlaceholderText="Что сохранить?" AcceptsReturn="True" TextWrapping="Wrap" MaxLength="1000"/>
+       <Button x:Name="SaveNoteButton" Content="Сохранить заметку" Click="SaveNote"/>
+       <StackPanel x:Name="Notes" Spacing="12"/>
+      </StackPanel>
+     </ScrollViewer>
+     <ScrollViewer x:Name="HistoryPage" Visibility="Collapsed">
+      <StackPanel Spacing="14"><TextBlock Text="Журнал действий" FontSize="24"/><TextBlock x:Name="HistoryText" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></StackPanel>
+     </ScrollViewer>
+     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="14" Padding="0,12,16,20" MaxWidth="700" HorizontalAlignment="Stretch">
+       <TextBlock Text="Голос и микрофон" FontSize="24" FontWeight="SemiBold"/>
+       <ComboBox x:Name="Microphones" Header="Микрофон" HorizontalAlignment="Stretch"/>
+       <Button x:Name="DevicesButton" Content="Обновить список устройств" Click="GetDevices"/>
+       <ComboBox x:Name="Voice" Header="Голос" HorizontalAlignment="Stretch" SelectedIndex="0">
+        <ComboBoxItem Content="Ирина · Piper, локальный женский голос" Tag="piper"/>
+        <ComboBoxItem Content="Установленный голос Windows" Tag="sapi"/>
+       </ComboBox>
+       <Slider x:Name="Rate" Header="Темп речи" Minimum="120" Maximum="230" Value="175" StepFrequency="5"/>
+       <Slider x:Name="Volume" Header="Громкость голоса" Minimum="10" Maximum="100" Value="85"/>
+       <ToggleSwitch x:Name="SpeakTyped" Header="Озвучивать текстовые ответы"/>
+       <ToggleSwitch x:Name="ScheduledReminders" Header="Запускать напоминания при закрытом окне"/>
+       <TextBlock Text="Используется планировщик Windows. Пробуждение из сна зависит от устройства. При отключённом питании звук невозможен." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <ToggleSwitch x:Name="Wake" Header="Принимать голосовые команды только после «Варя» или «Джарвис»"/>
+       <TextBlock Text="В трее обращение по имени обязательно. Аудио обрабатывается локально и не сохраняется." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <TextBlock Text="Управление" FontSize="24" FontWeight="SemiBold" Margin="0,10,0,0"/>
+       <ComboBox x:Name="Mode" Header="Режим управления" HorizontalAlignment="Stretch" SelectedIndex="1">
+        <x:String>Наблюдатель</x:String><x:String>Помощник</x:String><x:String>Автономный</x:String><x:String>Расширенный</x:String>
+       </ComboBox>
+       <ToggleSwitch x:Name="Installed" Header="Разрешить запуск приложений меню «Пуск» по имени"/>
+       <ToggleSwitch x:Name="SaveHistory" Header="Сохранять историю на этом ПК" IsOn="True"/>
+       <TextBox x:Name="Project" Header="Папка Python-проекта" PlaceholderText="Например C:\Projects\my-app"/>
+       <TextBox x:Name="WorkApps" Header="Программы для начала работы через запятую" PlaceholderText="браузер, блокнот"/>
+       <TextBox x:Name="MusicRoot" Header="Папка локальной музыки" PlaceholderText="По умолчанию папка Музыка Windows"/>
+       <TextBlock Text="Рабочие программы: блокнот, калькулятор, проводник, paint, браузер. Для выключения ПК нужна точная голосовая фраза подтверждения." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="SaveSettingsButton" Content="Сохранить" Click="SaveSettings" Style="{StaticResource AccentButtonStyle}"/>
+        <Button x:Name="PreviewButton" Content="Послушать голос" Click="Preview"/>
+       </StackPanel>
+       <TextBlock Text="Хранение и приложение" FontSize="24" FontWeight="SemiBold" Margin="0,10,0,0"/>
+       <TextBlock Text="Почтовый аккаунт" FontSize="24" FontWeight="SemiBold"/>
+       <TextBlock Text="Укажи серверы провайдера и пароль приложения. Пароль хранится зашифрованным Windows. Отправка всегда требует отдельного подтверждения." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <TextBox x:Name="MailAddress" Header="Адрес почты" PlaceholderText="name@example.com"/>
+       <TextBox x:Name="ImapHost" Header="IMAP-сервер"/>
+       <NumberBox x:Name="ImapPort" Header="IMAP-порт SSL" Value="993" Minimum="1" Maximum="65535"/>
+       <TextBox x:Name="SmtpHost" Header="SMTP-сервер"/>
+       <NumberBox x:Name="SmtpPort" Header="SMTP-порт (465 SSL или 587 STARTTLS)" Value="465" Minimum="1" Maximum="65535"/>
+       <PasswordBox x:Name="MailPassword" Header="Пароль приложения почтового провайдера"/>
+       <Button x:Name="SaveMailButton" Content="Подключить почтовый профиль" Click="SaveMail"/>
+       <Button Content="Открыть папку данных" Click="OpenData"/>
+       <Button x:Name="RestartButton" Content="Перезапустить движок" Click="Restart"/>
+       <TextBlock Text="Обновления" FontSize="24" FontWeight="SemiBold" Margin="0,10,0,0"/>
+       <ToggleSwitch x:Name="AutoUpdates" Header="Проверять новые версии при запуске"/>
+       <TextBlock Text="Параметр сохраняется кнопкой «Сохранить». Загрузка и установка запускаются отдельно. Файлы проверяются подписью Вари и SHA-256." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+       <Button x:Name="CheckUpdateButton" Content="Проверить обновления" Click="CheckUpdates"/>
+       <TextBlock x:Name="UpdateStatus" Text="Проверка обращается к GitHub Releases." TextWrapping="Wrap"/>
+       <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" Minimum="0" Maximum="100"/>
+       <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="InstallUpdateButton" Content="Загрузить и установить" Click="InstallUpdate" IsEnabled="False"/>
+        <Button x:Name="CancelUpdateButton" Content="Отменить загрузку" Click="CancelUpdate" Visibility="Collapsed"/>
+       </StackPanel>
+       <TextBlock Text="Варя 2.1 · WinUI 3 · Whisper · Piper · Qwen 1.5B" Foreground="#A5B5BC" TextWrapping="Wrap"/>
+       <TextBlock Text="Модели находятся в папке приложения. Интернет для повседневной работы не требуется. Нагрузка растёт во время распознавания и общения." TextWrapping="Wrap" Foreground="#A5B5BC"/>
+      </StackPanel>
+     </ScrollViewer>
+    </Grid>
+    <StackPanel Grid.Row="3" Spacing="10">
+     <Grid ColumnSpacing="8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBox x:Name="Input" PlaceholderText="Напиши просьбу…" TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="130" MaxLength="2000" AutomationProperties.Name="Сообщение Варе"/>
+      <Button x:Name="SendButton" Grid.Column="1" Content="Отправить" Click="Send" VerticalAlignment="Bottom" Style="{StaticResource AccentButtonStyle}" IsEnabled="False"/>
+     </Grid>
+     <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Button x:Name="MicButton" Content="Включить микрофон" Click="Microphone" IsEnabled="False"/>
+      <TextBlock Grid.Column="1" x:Name="ResourceText" Text="Локальный режим" Foreground="#82959E" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" TextWrapping="Wrap" Margin="12,0,0,0"/>
+     </Grid>
+    </StackPanel>
+   </Grid>
+  </NavigationView>
+ </Grid>
+</Page>

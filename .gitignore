@@ -5,3 +5,12 @@ logs/
 *.py[cod]
 build/
 dist/
+models/
+tools/llama/
+tools/browser/
+tools/wix/
+tools/wix3/
+tools/inno/
+native/**/bin/
+native/**/obj/
+native/**/.vs/

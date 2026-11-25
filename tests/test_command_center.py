@@ -295,13 +295,18 @@ def test_russian_layout_paste_shortcut():
 ])
 def test_browser_and_music_use_local_ordered_actions(session, monkeypatch, utterance):
     import requests_pc
+    import music_tools
     monkeypatch.setattr(actions, "open_app", app := Mock(return_value=True))
     monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(music_tools, "play", music := Mock(return_value="Играет тест"))
     monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
     main.route_command(utterance, dialogue=session, typed=True)
     app.assert_called_once_with("браузер")
-    service.assert_called_once()
-    assert service.call_args.args[0] in {"музыку", "яндекс музыку"}
+    if "яндекс" in utterance.casefold():
+        service.assert_called_once()
+    else:
+        music.assert_called_once()
+        service.assert_not_called()
     inference.assert_not_called()
     assert session.mission is None and session.proposal is None
 
@@ -313,10 +318,16 @@ def test_browser_and_music_use_local_ordered_actions(session, monkeypatch, utter
 ])
 def test_music_does_not_require_model_or_confirmation(session, monkeypatch, utterance):
     import requests_pc
+    import music_tools
     monkeypatch.setattr(actions, "open_service", service := Mock())
+    monkeypatch.setattr(music_tools, "play", music := Mock(return_value="Играет тест"))
     monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
     main.route_command(utterance, dialogue=session, typed=True)
-    service.assert_called_once()
+    if utterance.casefold().startswith("включи"):
+        music.assert_called_once_with("")
+        service.assert_not_called()
+    else:
+        service.assert_called_once()
     inference.assert_not_called()
     assert session.proposal is None
 
@@ -344,6 +355,8 @@ def test_service_url_is_fixed(monkeypatch):
 
 
 def test_low_memory_keeps_local_actions_available(session, monkeypatch):
+    import music_tools
+    monkeypatch.setattr(music_tools, "play", music := Mock(return_value="Играет тест"))
     import conversation
     import requests_pc
     monkeypatch.setattr(conversation, "memory_pressure", lambda: True)
@@ -351,7 +364,7 @@ def test_low_memory_keeps_local_actions_available(session, monkeypatch):
     monkeypatch.setattr(requests_pc, "interpret", inference := Mock())
     monkeypatch.setattr(actions, "open_service", service := Mock())
     main.route_command("включи музыку", dialogue=session, typed=True)
-    service.assert_called_once()
+    music.assert_called_once()
     main.route_command("сделай неведомое действие", dialogue=session, typed=True)
     inference.assert_not_called()
     assert "Память компьютера" in session.last_result

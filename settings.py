@@ -11,6 +11,8 @@ DEFAULTS = {
     "voice": "neural", "rate": 175, "volume": 85, "wake_word": False,
     "speak_typed": False, "microphone": None, "model": "qwen2.5:7b",
     "save_history": True,
+    "scheduled_reminders": False,
+    "check_updates": False,
 }
 _lock = threading.RLock()
 _current = dict(DEFAULTS)
@@ -19,7 +21,7 @@ _current = dict(DEFAULTS)
 def validate(values: dict) -> dict:
     """Принять только известные настройки в допустимых пределах."""
     result = dict(DEFAULTS)
-    if values.get("voice") in {"neural", "sapi"}:
+    if values.get("voice") in {"neural", "sapi", "piper"}:
         result["voice"] = values["voice"]
     for key, low, high in (("rate", 120, 230), ("volume", 10, 100)):
         if type(values.get(key)) is int:
@@ -30,6 +32,14 @@ def validate(values: dict) -> dict:
         result["speak_typed"] = values["speak_typed"]
     if type(values.get("save_history")) is bool:
         result["save_history"] = values["save_history"]
+    if type(values.get("scheduled_reminders")) is bool:
+        result["scheduled_reminders"] = values["scheduled_reminders"]
+    if type(values.get("check_updates")) is bool:
+        result["check_updates"] = values["check_updates"]
+    if values.get("recognition") == "vosk":
+        result["recognition"] = "vosk"
+    if values.get("backend") == "llamacpp":
+        result["backend"] = "llamacpp"
     mic = values.get("microphone")
     if type(mic) is int and 0 <= mic < 1024:
         result["microphone"] = mic
@@ -51,6 +61,9 @@ def validate(values: dict) -> dict:
     project = values.get("project")
     if isinstance(project, str) and project and Path(project).is_absolute():
         result["project"] = project
+    music = values.get("music_root")
+    if isinstance(music, str) and music and Path(music).is_absolute():
+        result["music_root"] = music
     return result
 
 

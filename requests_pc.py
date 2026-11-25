@@ -13,6 +13,7 @@ from win32com.shell import shell, shellcon
 import actions
 import config
 import conversation
+import capabilities
 from command_results import Result, timer_reference, window_action
 from dialogue import Dialogue
 import desktop
@@ -64,6 +65,8 @@ def open_location(action: str, value: str) -> Result:
 def perform(session: Dialogue, intent: Intent) -> Result:
     """Выполнить проверенную локальную операцию; аргументы остаются данными."""
     action, arg = intent.action, intent.argument
+    if action in capabilities.DESCRIPTIONS:
+        return capabilities.request(session, action, arg)
     if action in {"diagnose", "sort", "work", "check", "agenda"}:
         return missions.request(session, action)
     if action in {"folder", "settings"}:
@@ -209,7 +212,7 @@ def understand(session: Dialogue, text: str) -> Result | None:
         return Result("")
     except (aiohttp.ClientError, OSError, TimeoutError, ValueError, KeyError, TypeError):
         logging.getLogger(__name__).warning("Не удалось разобрать просьбу", exc_info=True)
-        return Result("Не удалось разобрать фразу через Ollama. Обычные команды доступны: например, «покажи загрузки».")
+        return Result("Не удалось разобрать просьбу локальной моделью. Уточни действие и нужный файл или приложение.")
     if speech.is_cancelled():
         return Result("")
     if intent.action == "chat":
